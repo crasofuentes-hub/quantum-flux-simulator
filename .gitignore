@@ -3,4 +3,4 @@ Cargo.lock
 .vscode/
 .idea/
 *.png
-*.json
+*.json.venv-radon/
