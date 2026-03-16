@@ -148,7 +148,7 @@ pub fn analyze_file(
     let block_pressure = (intermediate_model.critical_blocks.len() as f64) * 0.12;
     let physical_pressure = physical_model.decoherence_rate * 6.0
         + physical_model.von_neumann_entropy * 0.75
-        + physical_model.wheeler_dewitt_penalty * 0.08
+        + physical_model.global_constraint_penalty * 0.08
         + (physical_model.effective_runtime_dilation - 1.0) * 2.5;
 
     let solver_pressure = solver_summary.mean_stress * 1.8

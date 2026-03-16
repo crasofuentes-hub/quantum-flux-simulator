@@ -46,8 +46,8 @@ pub fn print_text_summary(analysis: &FileAnalysis) {
         analysis.physical_model.von_neumann_entropy
     );
     println!(
-        "wheeler_dewitt_penalty={}",
-        analysis.physical_model.wheeler_dewitt_penalty
+        "global_constraint_penalty={}",
+        analysis.physical_model.global_constraint_penalty
     );
     println!(
         "recommended_qubit_budget={}",

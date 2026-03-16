@@ -25,7 +25,7 @@ pub fn run_effective_solver(
 
     let base_stress = physical_model.decoherence_rate * 8.0
         + physical_model.von_neumann_entropy * 0.9
-        + physical_model.wheeler_dewitt_penalty * 0.12
+        + physical_model.global_constraint_penalty * 0.12
         + (physical_model.effective_runtime_dilation - 1.0) * 3.5;
 
     let mut values = Vec::with_capacity(samples);

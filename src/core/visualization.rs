@@ -34,7 +34,7 @@ fn draw_heatmap(img: &mut RgbImage, analysis: &FileAnalysis) {
     let metrics = [
         normalize_score(analysis.physical_model.decoherence_rate, 0.0, 0.10),
         normalize_score(analysis.physical_model.von_neumann_entropy, 0.0, 2.0),
-        normalize_score(analysis.physical_model.wheeler_dewitt_penalty, 0.0, 2.0),
+        normalize_score(analysis.physical_model.global_constraint_penalty, 0.0, 2.0),
         normalize_score(analysis.solver_summary.collapse_probability, 0.0, 1.0),
         normalize_score(analysis.singularity_risk, 0.0, 1.0),
     ];

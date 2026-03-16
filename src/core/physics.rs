@@ -1,32 +1,39 @@
 use crate::core::analysis::{AlgorithmClass, BlockKind, CriticalBlock};
+use crate::core::state::{
+    entropy_von_neumann_2x2, initial_density_from_information_density, ComplexMatrix2, Density2,
+};
+use num_complex::Complex64;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LindbladOperators {
-    pub dephasing: f64,
-    pub amplitude_damping: f64,
+pub struct LindbladRates {
+    pub dephasing_gamma: f64,
+    pub amplitude_gamma: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct PhysicalBlockModel {
+pub struct EffectivePhysicalBlock {
     pub name: String,
     pub kind: BlockKind,
     pub effective_logical_qubits: u32,
-    pub effective_hamiltonian: f64,
-    pub lindblad: LindbladOperators,
-    pub relativistic_factor: f64,
+    pub effective_hamiltonian_energy: f64,
+    pub coupling_strength: f64,
+    pub lindblad_rates: LindbladRates,
+    pub effective_relativistic_factor: f64,
     pub computational_energy_cost: f64,
     pub information_density: f64,
     pub coherence_penalty: f64,
+    pub density_state: Density2,
+    pub density_entropy: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectivePhysicalModel {
-    pub blocks: Vec<PhysicalBlockModel>,
+    pub blocks: Vec<EffectivePhysicalBlock>,
     pub decoherence_rate: f64,
     pub effective_runtime_dilation: f64,
     pub von_neumann_entropy: f64,
-    pub wheeler_dewitt_penalty: f64,
+    pub global_constraint_penalty: f64,
     pub recommended_qubit_budget: u32,
 }
 
@@ -37,7 +44,7 @@ pub fn build_effective_physical_model(
     relativistic_beta: f64,
     target_temp_kelvin: f64,
 ) -> EffectivePhysicalModel {
-    let relativistic_factor = compute_relativistic_factor(relativistic_beta);
+    let effective_relativistic_factor = compute_effective_relativistic_factor(relativistic_beta);
     let thermal_factor = 1.0 + target_temp_kelvin / 300.0;
     let domain_factor = match algorithm_class {
         AlgorithmClass::Crypto => 1.20,
@@ -46,55 +53,70 @@ pub fn build_effective_physical_model(
         AlgorithmClass::General => 0.85,
     };
 
-    let physical_blocks: Vec<PhysicalBlockModel> = blocks
-        .iter()
-        .map(|block| {
-            let kind_factor = match block.kind {
-                BlockKind::Function => 0.90,
-                BlockKind::Loop => 1.15,
-                BlockKind::CryptoPrimitive => 1.35,
-                BlockKind::NumericalKernel => 1.20,
-                BlockKind::MlKernel => 1.25,
-            };
+    let mut physical_blocks = Vec::new();
 
-            let effective_hamiltonian =
-                block.estimated_cost * block.information_density * kind_factor * domain_factor;
+    for block in blocks {
+        let kind_factor = match block.kind {
+            BlockKind::Function => 0.90,
+            BlockKind::Loop => 1.15,
+            BlockKind::CryptoPrimitive => 1.35,
+            BlockKind::NumericalKernel => 1.20,
+            BlockKind::MlKernel => 1.25,
+        };
 
-            let dephasing =
-                quantum_noise * thermal_factor * (0.45 + block.information_density * 0.60);
-            let amplitude_damping = quantum_noise
-                * (1.0 + relativistic_beta)
-                * (0.35 + (block.estimated_logical_qubits as f64 / 64.0));
+        let effective_hamiltonian_energy =
+            block.estimated_cost * block.information_density * kind_factor * domain_factor;
 
-            let computational_energy_cost =
-                effective_hamiltonian * relativistic_factor * (1.0 + thermal_factor * 0.10);
+        let coupling_strength = 0.15 + block.information_density * 0.35;
 
-            let coherence_penalty =
-                (dephasing + amplitude_damping) * block.information_density * kind_factor;
+        let dephasing_gamma =
+            quantum_noise * thermal_factor * (0.45 + block.information_density * 0.60);
 
-            PhysicalBlockModel {
-                name: block.name.clone(),
-                kind: block.kind,
-                effective_logical_qubits: block.estimated_logical_qubits,
-                effective_hamiltonian,
-                lindblad: LindbladOperators {
-                    dephasing,
-                    amplitude_damping,
-                },
-                relativistic_factor,
-                computational_energy_cost,
-                information_density: block.information_density,
-                coherence_penalty,
-            }
-        })
-        .collect();
+        let amplitude_gamma = quantum_noise
+            * (1.0 + relativistic_beta)
+            * (0.35 + (block.estimated_logical_qubits as f64 / 64.0));
+
+        let h = effective_hamiltonian_matrix(effective_hamiltonian_energy, coupling_strength);
+        let l_phi = lindblad_dephasing(dephasing_gamma);
+        let l_amp = lindblad_amplitude_damping(amplitude_gamma);
+
+        let rho0 = initial_density_from_information_density(block.information_density);
+        let rho1 = lindblad_density_step(&rho0, &h, &[l_phi, l_amp], 0.05);
+
+        let density_entropy = entropy_von_neumann_2x2(&rho1);
+
+        let computational_energy_cost = effective_hamiltonian_energy
+            * effective_relativistic_factor
+            * (1.0 + thermal_factor * 0.10);
+
+        let coherence_penalty =
+            (dephasing_gamma + amplitude_gamma) * block.information_density * kind_factor;
+
+        physical_blocks.push(EffectivePhysicalBlock {
+            name: block.name.clone(),
+            kind: block.kind,
+            effective_logical_qubits: block.estimated_logical_qubits,
+            effective_hamiltonian_energy,
+            coupling_strength,
+            lindblad_rates: LindbladRates {
+                dephasing_gamma,
+                amplitude_gamma,
+            },
+            effective_relativistic_factor,
+            computational_energy_cost,
+            information_density: block.information_density,
+            coherence_penalty,
+            density_state: rho1.to_density2(),
+            density_entropy,
+        });
+    }
 
     let decoherence_rate = if physical_blocks.is_empty() {
         quantum_noise
     } else {
         physical_blocks
             .iter()
-            .map(|b| b.lindblad.dephasing + b.lindblad.amplitude_damping)
+            .map(|b| b.lindblad_rates.dephasing_gamma + b.lindblad_rates.amplitude_gamma)
             .sum::<f64>()
             / physical_blocks.len() as f64
     };
@@ -103,22 +125,28 @@ pub fn build_effective_physical_model(
         .iter()
         .map(|b| b.computational_energy_cost)
         .sum();
-
     let total_penalty: f64 = physical_blocks.iter().map(|b| b.coherence_penalty).sum();
 
-    let wheeler_dewitt_penalty =
-        (total_energy * 0.015 + total_penalty * 1.25 + decoherence_rate * 2.0).max(0.0);
+    let global_constraint_penalty =
+        (0.015 * total_energy + 1.25 * total_penalty + 2.0 * decoherence_rate).max(0.0);
 
     let effective_runtime_dilation =
-        relativistic_factor * (1.0 + total_energy / 200.0 + target_temp_kelvin / 4000.0);
+        effective_relativistic_factor * (1.0 + total_energy / 200.0 + target_temp_kelvin / 4000.0);
 
-    let von_neumann_entropy =
-        compute_effective_von_neumann_entropy(&physical_blocks, quantum_noise, thermal_factor);
+    let von_neumann_entropy = if physical_blocks.is_empty() {
+        0.0
+    } else {
+        physical_blocks
+            .iter()
+            .map(|b| b.density_entropy)
+            .sum::<f64>()
+            / physical_blocks.len() as f64
+    };
 
     let recommended_qubit_budget = compute_recommended_qubit_budget(
         &physical_blocks,
         decoherence_rate,
-        wheeler_dewitt_penalty,
+        global_constraint_penalty,
     );
 
     EffectivePhysicalModel {
@@ -126,48 +154,80 @@ pub fn build_effective_physical_model(
         decoherence_rate,
         effective_runtime_dilation,
         von_neumann_entropy,
-        wheeler_dewitt_penalty,
+        global_constraint_penalty,
         recommended_qubit_budget,
     }
 }
 
-fn compute_relativistic_factor(beta: f64) -> f64 {
+pub fn compute_effective_relativistic_factor(beta: f64) -> f64 {
     let clamped = beta.clamp(0.0, 0.999_999);
     1.0 / (1.0 - clamped * clamped).sqrt()
 }
 
-fn compute_effective_von_neumann_entropy(
-    blocks: &[PhysicalBlockModel],
-    quantum_noise: f64,
-    thermal_factor: f64,
-) -> f64 {
-    if blocks.is_empty() {
-        return 0.0;
+fn effective_hamiltonian_matrix(energy: f64, coupling: f64) -> ComplexMatrix2 {
+    ComplexMatrix2 {
+        a00: Complex64::new(energy, 0.0),
+        a01: Complex64::new(coupling, 0.0),
+        a10: Complex64::new(coupling, 0.0),
+        a11: Complex64::new(-energy, 0.0),
+    }
+}
+
+fn lindblad_dephasing(gamma: f64) -> ComplexMatrix2 {
+    let s = gamma.max(0.0).sqrt();
+    ComplexMatrix2 {
+        a00: Complex64::new(s, 0.0),
+        a01: Complex64::new(0.0, 0.0),
+        a10: Complex64::new(0.0, 0.0),
+        a11: Complex64::new(-s, 0.0),
+    }
+}
+
+fn lindblad_amplitude_damping(gamma: f64) -> ComplexMatrix2 {
+    let s = gamma.max(0.0).sqrt();
+    ComplexMatrix2 {
+        a00: Complex64::new(0.0, 0.0),
+        a01: Complex64::new(s, 0.0),
+        a10: Complex64::new(0.0, 0.0),
+        a11: Complex64::new(0.0, 0.0),
+    }
+}
+
+pub fn lindblad_density_step(
+    rho: &ComplexMatrix2,
+    h: &ComplexMatrix2,
+    lindblad_ops: &[ComplexMatrix2],
+    dt: f64,
+) -> ComplexMatrix2 {
+    let i = Complex64::new(0.0, 1.0);
+    let unitary_term = h.commutator(rho).mul_scalar(-i);
+
+    let mut dissipative = ComplexMatrix2::zero();
+
+    for l in lindblad_ops {
+        let ld = l.dagger();
+        let l_rho_ld = l.mul(rho).mul(&ld);
+        let ld_l = ld.mul(l);
+        let anti = ld_l
+            .anticommutator(rho)
+            .mul_scalar(Complex64::new(0.5, 0.0));
+        dissipative = dissipative.add(&l_rho_ld.sub(&anti));
     }
 
-    let raw_weights: Vec<f64> = blocks
-        .iter()
-        .map(|b| (b.information_density * b.effective_hamiltonian).max(1e-12))
-        .collect();
-
-    let total = raw_weights.iter().sum::<f64>().max(1e-12);
-
-    let mut entropy = 0.0;
-    for weight in raw_weights {
-        let p = (weight / total).clamp(1e-12, 1.0);
-        entropy -= p * p.ln();
-    }
-
-    entropy * (1.0 + quantum_noise * 2.0 + (thermal_factor - 1.0) * 0.15)
+    rho.add(
+        &unitary_term
+            .add(&dissipative)
+            .mul_scalar(Complex64::new(dt, 0.0)),
+    )
+    .stabilize()
 }
 
 fn compute_recommended_qubit_budget(
-    blocks: &[PhysicalBlockModel],
+    blocks: &[EffectivePhysicalBlock],
     decoherence_rate: f64,
-    wheeler_dewitt_penalty: f64,
+    global_constraint_penalty: f64,
 ) -> u32 {
     let base_qubits: u32 = blocks.iter().map(|b| b.effective_logical_qubits).sum();
-
-    let safety_margin = 1.0 + decoherence_rate * 0.8 + wheeler_dewitt_penalty * 0.03;
+    let safety_margin = 1.0 + decoherence_rate * 0.8 + global_constraint_penalty * 0.03;
     ((base_qubits as f64) * safety_margin).ceil() as u32
 }
