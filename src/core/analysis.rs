@@ -24,6 +24,7 @@ pub struct FileAnalysis {
     pub has_recursion: bool,
     pub crypto_hits: Vec<String>,
     pub numerical_hits: Vec<String>,
+    pub ml_hits: Vec<String>,
     pub quantum_noise: f64,
     pub relativistic_beta: f64,
     pub target_temp_kelvin: f64,
@@ -61,13 +62,25 @@ pub fn analyze_file(
             "conv",
             "solve",
             "integrate",
+            "jacobi",
+            "rk4",
+        ],
+    );
+    let ml_hits = detect_keywords(
+        &text,
+        &[
             "gradient",
             "backprop",
+            "optimizer",
+            "relu",
+            "softmax",
+            "loss",
+            "tensor",
         ],
     );
 
     let algorithm_class =
-        class_override.unwrap_or_else(|| classify(&crypto_hits, &numerical_hits, &text));
+        class_override.unwrap_or_else(|| classify(&crypto_hits, &numerical_hits, &ml_hits));
 
     let complexity = functions as f64
         + (fors as f64 * 1.4)
@@ -75,10 +88,18 @@ pub fn analyze_file(
         + (max_nesting as f64 * 1.8)
         + if has_recursion { 2.0 } else { 0.0 };
 
-    let stress = quantum_noise * 18.0
+    let domain_pressure = match algorithm_class {
+        AlgorithmClass::Crypto => 1.20,
+        AlgorithmClass::Numerical => 1.00,
+        AlgorithmClass::Ml => 1.10,
+        AlgorithmClass::General => 0.85,
+    };
+
+    let stress = (quantum_noise * 18.0
         + relativistic_beta * 9.0
         + (target_temp_kelvin / 300.0)
-        + complexity / 20.0;
+        + complexity / 20.0)
+        * domain_pressure;
 
     let stability_score = (100.0 - stress * 8.0).clamp(0.0, 100.0);
     let singularity_risk = (stress / 12.0).clamp(0.0, 1.0);
@@ -96,6 +117,7 @@ pub fn analyze_file(
         has_recursion,
         crypto_hits,
         numerical_hits,
+        ml_hits,
         quantum_noise,
         relativistic_beta,
         target_temp_kelvin,
@@ -182,7 +204,8 @@ fn detect_recursion(text: &str, language: &str) -> bool {
                     let name = rest.split('(').next().unwrap_or("").trim();
                     if !name.is_empty() {
                         let needle = format!("{name}(");
-                        if text.contains(&needle) {
+                        let count = text.matches(&needle).count();
+                        if count > 1 {
                             return true;
                         }
                     }
@@ -197,7 +220,8 @@ fn detect_recursion(text: &str, language: &str) -> bool {
                     let name = rest.split('(').next().unwrap_or("").trim();
                     if !name.is_empty() {
                         let needle = format!("{name}(");
-                        if text.contains(&needle) {
+                        let count = text.matches(&needle).count();
+                        if count > 1 {
                             return true;
                         }
                     }
@@ -209,22 +233,21 @@ fn detect_recursion(text: &str, language: &str) -> bool {
     }
 }
 
-fn classify(crypto_hits: &[String], numerical_hits: &[String], text: &str) -> AlgorithmClass {
-    let lower = text.to_ascii_lowercase();
-
+fn classify(
+    crypto_hits: &[String],
+    numerical_hits: &[String],
+    ml_hits: &[String],
+) -> AlgorithmClass {
     if !crypto_hits.is_empty() {
         return AlgorithmClass::Crypto;
     }
 
-    if !numerical_hits.is_empty() {
-        if lower.contains("gradient") || lower.contains("backprop") {
-            return AlgorithmClass::Ml;
-        }
-        return AlgorithmClass::Numerical;
+    if !ml_hits.is_empty() {
+        return AlgorithmClass::Ml;
     }
 
-    if lower.contains("tensor") || lower.contains("neural") || lower.contains("backprop") {
-        return AlgorithmClass::Ml;
+    if !numerical_hits.is_empty() {
+        return AlgorithmClass::Numerical;
     }
 
     AlgorithmClass::General
