@@ -1,32 +1,18 @@
 # Changelog
 
-## v0.1.0 - Initial public baseline
+## v0.2.0
+- added explicit effective model documentation
+- implemented discrete 2x2 Lindblad density evolution
+- added von Neumann entropy calculation
+- replaced misleading Wheeler-DeWitt naming with explicit global constraint penalty
+- added reproducible seeded runs
+- added report schema versioning and analysis versioning
+- added batch analysis
+- added synthetic benchmark dataset
+- added structural baseline
+- added external Radon baseline bootstrap
+- added comparative result generation and interpretation docs
 
-### Added
-- Rust CLI baseline for `flux-sim`
-- source classification for `crypto`, `numerical`, `ml`, `general`
-- intermediate model extraction:
-  - critical blocks
-  - hotspots
-  - information channels
-- effective physical model:
-  - logical qubit estimates
-  - Hamiltonian proxy
-  - Lindblad-inspired noise metrics
-  - relativistic penalty
-  - Wheeler-DeWitt-like penalty
-  - effective entropy metrics
-- Monte Carlo solver:
-  - perturbation sampling
-  - renormalized tail handling
-  - collapse probability
-  - computational singularity risk
-  - solver stability score
-- JSON report generation
-- PNG report generation
-- CI workflow
-- local verification scripts
-- release checklist
-
-### Notes
-This release is intentionally framed as an explicit effective approximation prototype rather than a hardware-faithful quantum simulator.
+## v0.1.0
+- initial executable Rust baseline
+- code analysis, reporting, visualization, and CLI bootstrap
