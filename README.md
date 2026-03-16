@@ -16,10 +16,12 @@
 - Wheeler-DeWitt-like global penalty
 - Monte Carlo stress simulation with renormalized tail behavior
 - JSON output for downstream tooling
+- PNG visualization output for quick inspection
 
 ## CLI examples
 
 ```powershell
 cargo run -- analyze examples\my_crypto.py --quantum-noise 0.01 --relativistic 0.8c --target-temp 77K
 cargo run -- analyze examples\my_crypto.py --quantum-noise 0.01 --relativistic 0.8c --target-temp 77K --json-out target\manual-report.json
-cargo run -- profile examples\navier_stub.py --algorithm-class numerical --quantum-noise 0.02 --target-temp 300K
+cargo run -- analyze examples\my_crypto.py --quantum-noise 0.01 --relativistic 0.8c --target-temp 77K --plot target\manual-plot.png
+cargo run -- profile examples\navier_stub.py --algorithm-class numerical --quantum-noise 0.02 --target-temp 300K --plot target\navier-plot.png

@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use flux_sim::core::analysis::{analyze_file, AlgorithmClass, FileAnalysis};
 use flux_sim::core::reporting::{print_text_summary, write_json_report};
+use flux_sim::core::visualization::write_png_report;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]
@@ -107,6 +108,7 @@ fn execute_analysis(
     relativistic: &str,
     target_temp: &str,
     json_out: Option<&Path>,
+    plot_out: Option<&Path>,
     algorithm_class: Option<&str>,
 ) -> Result<FileAnalysis> {
     ensure_source_exists(source_path)?;
@@ -117,6 +119,9 @@ fn execute_analysis(
     let analysis = analyze_file(source_path, quantum_noise, beta, kelvin, override_class)?;
     if let Some(path) = json_out {
         write_json_report(path, &analysis)?;
+    }
+    if let Some(path) = plot_out {
+        write_png_report(path, &analysis)?;
     }
     Ok(analysis)
 }
@@ -131,7 +136,7 @@ fn main() -> Result<()> {
             relativistic,
             target_temp,
             json_out,
-            plot: _,
+            plot,
             algorithm_class,
         } => {
             let analysis = execute_analysis(
@@ -140,6 +145,7 @@ fn main() -> Result<()> {
                 &relativistic,
                 &target_temp,
                 json_out.as_deref(),
+                plot.as_deref(),
                 algorithm_class.as_deref(),
             )?;
             print_text_summary(&analysis);
@@ -150,7 +156,7 @@ fn main() -> Result<()> {
             quantum_noise,
             relativistic,
             target_temp,
-            plot: _,
+            plot,
         } => {
             let analysis = execute_analysis(
                 &source_path,
@@ -158,6 +164,7 @@ fn main() -> Result<()> {
                 &relativistic,
                 &target_temp,
                 None,
+                plot.as_deref(),
                 algorithm_class.as_deref(),
             )?;
             print_text_summary(&analysis);
