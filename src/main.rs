@@ -3,7 +3,9 @@ use clap::{Parser, Subcommand};
 use flux_sim::core::analysis::{
     analyze_file_with_seed, AlgorithmClass, FileAnalysis, ANALYSIS_VERSION, REPORT_SCHEMA_VERSION,
 };
-use flux_sim::core::benchmark::run_synthetic_benchmark;
+use flux_sim::core::benchmark::{
+    render_ablation_markdown, run_synthetic_ablation, run_synthetic_benchmark,
+};
 use flux_sim::core::reporting::{
     print_text_summary, write_batch_json_report, write_json_report, BatchReport,
 };
@@ -90,6 +92,21 @@ enum Commands {
         #[arg(long, default_value_t = 42)]
         seed: u64,
     },
+    Ablation {
+        input_dir: PathBuf,
+        #[arg(long, default_value_t = 0.01)]
+        quantum_noise: f64,
+        #[arg(long, default_value = "0.0c")]
+        relativistic: String,
+        #[arg(long, default_value = "300K")]
+        target_temp: String,
+        #[arg(long)]
+        json_out: PathBuf,
+        #[arg(long)]
+        markdown_out: PathBuf,
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+    },
     Reproduce {
         input_path: PathBuf,
         #[arg(long, default_value_t = 0.01)]
@@ -130,6 +147,17 @@ struct ReproduceRequest<'a> {
     json_out: Option<&'a Path>,
     manifest_out: Option<&'a Path>,
     algorithm_class: Option<&'a str>,
+    seed: u64,
+}
+
+#[derive(Debug, Clone)]
+struct AblationRequest<'a> {
+    input_dir: &'a Path,
+    quantum_noise: f64,
+    relativistic: &'a str,
+    target_temp: &'a str,
+    json_out: &'a Path,
+    markdown_out: &'a Path,
     seed: u64,
 }
 
@@ -330,6 +358,57 @@ fn execute_batch(
         "mean_collapse_probability={}",
         report.aggregate.mean_collapse_probability
     );
+
+    Ok(())
+}
+
+fn execute_ablation(request: &AblationRequest<'_>) -> Result<()> {
+    if !request.input_dir.exists() {
+        bail!("input_dir does not exist: {}", request.input_dir.display());
+    }
+    if !request.input_dir.is_dir() {
+        bail!(
+            "input_dir is not a directory: {}",
+            request.input_dir.display()
+        );
+    }
+
+    let beta = parse_relativistic_fraction(request.relativistic)?;
+    let kelvin = parse_kelvin(request.target_temp)?;
+
+    ensure_parent_dir(request.json_out)?;
+    ensure_parent_dir(request.markdown_out)?;
+
+    let report = run_synthetic_ablation(
+        request.input_dir,
+        request.quantum_noise,
+        beta,
+        kelvin,
+        request.seed,
+    )?;
+
+    let json =
+        serde_json::to_string_pretty(&report).context("failed to serialize ablation report")?;
+    fs::write(request.json_out, json).with_context(|| {
+        format!(
+            "failed to write ablation JSON report: {}",
+            request.json_out.display()
+        )
+    })?;
+
+    let markdown = render_ablation_markdown(&report);
+    fs::write(request.markdown_out, markdown).with_context(|| {
+        format!(
+            "failed to write ablation markdown report: {}",
+            request.markdown_out.display()
+        )
+    })?;
+
+    println!("flux-sim ablation OK");
+    println!("files_analyzed={}", report.entries.len());
+    println!("variants={}", report.aggregate.len());
+    println!("json_out={}", request.json_out.display());
+    println!("markdown_out={}", request.markdown_out.display());
 
     Ok(())
 }
@@ -665,6 +744,26 @@ fn main() -> Result<()> {
                 "mean_collapse_probability={}",
                 report.aggregate.mean_collapse_probability
             );
+        }
+        Commands::Ablation {
+            input_dir,
+            quantum_noise,
+            relativistic,
+            target_temp,
+            json_out,
+            markdown_out,
+            seed,
+        } => {
+            let request = AblationRequest {
+                input_dir: &input_dir,
+                quantum_noise,
+                relativistic: &relativistic,
+                target_temp: &target_temp,
+                json_out: &json_out,
+                markdown_out: &markdown_out,
+                seed,
+            };
+            execute_ablation(&request)?;
         }
         Commands::Reproduce {
             input_path,

@@ -92,6 +92,70 @@ struct AnalysisSignals {
     ml_hits: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AnalysisAblation {
+    pub include_lindblad: bool,
+    pub include_global_constraint: bool,
+    pub include_relativistic_factor: bool,
+    pub include_solver: bool,
+}
+
+impl AnalysisAblation {
+    pub fn full_model() -> Self {
+        Self {
+            include_lindblad: true,
+            include_global_constraint: true,
+            include_relativistic_factor: true,
+            include_solver: true,
+        }
+    }
+
+    pub fn no_lindblad() -> Self {
+        Self {
+            include_lindblad: false,
+            include_global_constraint: true,
+            include_relativistic_factor: true,
+            include_solver: true,
+        }
+    }
+
+    pub fn no_global_constraint() -> Self {
+        Self {
+            include_lindblad: true,
+            include_global_constraint: false,
+            include_relativistic_factor: true,
+            include_solver: true,
+        }
+    }
+
+    pub fn no_relativistic_factor() -> Self {
+        Self {
+            include_lindblad: true,
+            include_global_constraint: true,
+            include_relativistic_factor: false,
+            include_solver: true,
+        }
+    }
+
+    pub fn no_solver() -> Self {
+        Self {
+            include_lindblad: true,
+            include_global_constraint: true,
+            include_relativistic_factor: true,
+            include_solver: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct EffectiveScoreEstimate {
+    pub stress: f64,
+    pub heuristic_stability: f64,
+    pub stability_score: f64,
+    pub singularity_risk: f64,
+    pub collapse_probability: f64,
+}
+
 pub fn analyze_file(
     path: &Path,
     quantum_noise: f64,
@@ -179,48 +243,44 @@ pub fn analyze_file_with_seed(
         seed,
     );
 
-    let domain_pressure = match algorithm_class {
-        AlgorithmClass::Crypto => 1.20,
-        AlgorithmClass::Numerical => 1.00,
-        AlgorithmClass::Ml => 1.10,
-        AlgorithmClass::General => 0.85,
-    };
-
-    let hotspot_pressure = (hotspots.len() as f64) * 0.18;
-    let block_pressure = (intermediate_model.critical_blocks.len() as f64) * 0.12;
-    let physical_pressure = physical_model.decoherence_rate * 6.0
-        + physical_model.von_neumann_entropy * 0.75
-        + physical_model.global_constraint_penalty * 0.08
-        + (physical_model.effective_runtime_dilation - 1.0) * 2.5;
-
-    let solver_pressure = solver_summary.mean_stress * 1.8
-        + solver_summary.collapse_probability * 4.5
-        + solver_summary.computational_singularity_risk * 5.5;
-
-    let stress = (quantum_noise * 18.0
-        + relativistic_beta * 9.0
-        + (target_temp_kelvin / 300.0)
-        + structural_complexity / 20.0
-        + hotspot_pressure
-        + block_pressure
-        + physical_pressure
-        + solver_pressure)
-        * domain_pressure;
-
-    let heuristic_stability = (100.0 - stress * 8.0).clamp(0.0, 100.0);
-    let stability_score = ((heuristic_stability * 0.45)
-        + (solver_summary.solver_stability_score * 0.55))
-        .clamp(0.0, 100.0);
-
-    let singularity_risk = ((stress / 12.0) * 0.40
-        + solver_summary.computational_singularity_risk * 0.60)
-        .clamp(0.0, 1.0);
+    let estimate = estimate_effective_scores(
+        &FileAnalysis {
+            run_metadata: RunMetadata {
+                report_schema_version: REPORT_SCHEMA_VERSION.to_string(),
+                analysis_version: ANALYSIS_VERSION.to_string(),
+                seed,
+                input_fingerprint: input_fingerprint.clone(),
+            },
+            path: path.display().to_string(),
+            language: language.clone(),
+            algorithm_class,
+            functions: signals.functions,
+            fors: signals.fors,
+            whiles: signals.whiles,
+            max_nesting: signals.max_nesting,
+            has_recursion: signals.has_recursion,
+            crypto_hits: signals.crypto_hits.clone(),
+            numerical_hits: signals.numerical_hits.clone(),
+            ml_hits: signals.ml_hits.clone(),
+            hotspots: hotspots.clone(),
+            intermediate_model: intermediate_model.clone(),
+            physical_model: physical_model.clone(),
+            solver_summary: solver_summary.clone(),
+            quantum_noise,
+            relativistic_beta,
+            target_temp_kelvin,
+            stability_score: 0.0,
+            singularity_risk: 0.0,
+            recommendation: String::new(),
+        },
+        AnalysisAblation::full_model(),
+    );
 
     let recommendation = build_recommendation(
         algorithm_class,
         solver_summary.collapse_probability,
-        singularity_risk,
-        stability_score,
+        estimate.singularity_risk,
+        estimate.stability_score,
         physical_model.recommended_qubit_budget,
     );
 
@@ -249,10 +309,88 @@ pub fn analyze_file_with_seed(
         quantum_noise,
         relativistic_beta,
         target_temp_kelvin,
-        stability_score,
-        singularity_risk,
+        stability_score: estimate.stability_score,
+        singularity_risk: estimate.singularity_risk,
         recommendation,
     })
+}
+
+pub fn estimate_effective_scores(
+    analysis: &FileAnalysis,
+    ablation: AnalysisAblation,
+) -> EffectiveScoreEstimate {
+    let domain_pressure = match analysis.algorithm_class {
+        AlgorithmClass::Crypto => 1.20,
+        AlgorithmClass::Numerical => 1.00,
+        AlgorithmClass::Ml => 1.10,
+        AlgorithmClass::General => 0.85,
+    };
+
+    let hotspot_pressure = (analysis.hotspots.len() as f64) * 0.18;
+    let block_pressure = (analysis.intermediate_model.critical_blocks.len() as f64) * 0.12;
+
+    let mut physical_pressure = 0.0;
+    if ablation.include_lindblad {
+        physical_pressure += analysis.physical_model.decoherence_rate * 6.0;
+        physical_pressure += analysis.physical_model.von_neumann_entropy * 0.75;
+    }
+    if ablation.include_global_constraint {
+        physical_pressure += analysis.physical_model.global_constraint_penalty * 0.08;
+    }
+    if ablation.include_relativistic_factor {
+        physical_pressure += (analysis.physical_model.effective_runtime_dilation - 1.0) * 2.5;
+    }
+
+    let mut solver_pressure = 0.0;
+    let collapse_probability = if ablation.include_solver {
+        analysis.solver_summary.collapse_probability
+    } else {
+        0.0
+    };
+
+    if ablation.include_solver {
+        solver_pressure += analysis.solver_summary.mean_stress * 1.8;
+        solver_pressure += analysis.solver_summary.collapse_probability * 4.5;
+        solver_pressure += analysis.solver_summary.computational_singularity_risk * 5.5;
+    }
+
+    let mut stress = analysis.quantum_noise * 18.0
+        + (analysis.target_temp_kelvin / 300.0)
+        + analysis.intermediate_model.structural_complexity / 20.0
+        + hotspot_pressure
+        + block_pressure
+        + physical_pressure
+        + solver_pressure;
+
+    if ablation.include_relativistic_factor {
+        stress += analysis.relativistic_beta * 9.0;
+    }
+
+    stress *= domain_pressure;
+
+    let heuristic_stability = (100.0 - stress * 8.0).clamp(0.0, 100.0);
+
+    let stability_score = if ablation.include_solver {
+        ((heuristic_stability * 0.45) + (analysis.solver_summary.solver_stability_score * 0.55))
+            .clamp(0.0, 100.0)
+    } else {
+        heuristic_stability
+    };
+
+    let singularity_risk = if ablation.include_solver {
+        ((stress / 12.0) * 0.40 + analysis.solver_summary.computational_singularity_risk * 0.60)
+            .clamp(0.0, 1.0)
+    } else {
+        (stress / 12.0).clamp(0.0, 1.0)
+    };
+
+    EffectiveScoreEstimate {
+        stress,
+        heuristic_stability,
+        stability_score,
+        singularity_risk,
+        collapse_probability,
+    }
 }
 
 fn collect_signals(text: &str, language: &str) -> AnalysisSignals {
