@@ -36,4 +36,8 @@ fn analyze_writes_json_report() {
     assert!(text.contains("\"decoherence_rate\""));
     assert!(text.contains("\"von_neumann_entropy\""));
     assert!(text.contains("\"recommended_qubit_budget\""));
+    assert!(text.contains("\"solver_summary\""));
+    assert!(text.contains("\"collapse_probability\""));
+    assert!(text.contains("\"computational_singularity_risk\""));
+    assert!(text.contains("\"solver_stability_score\""));
 }

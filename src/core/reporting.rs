@@ -53,6 +53,27 @@ pub fn print_text_summary(analysis: &FileAnalysis) {
         "recommended_qubit_budget={}",
         analysis.physical_model.recommended_qubit_budget
     );
+    println!("mc_samples={}", analysis.solver_summary.samples);
+    println!("mean_stress={}", analysis.solver_summary.mean_stress);
+    println!(
+        "stress_variance={}",
+        analysis.solver_summary.stress_variance
+    );
+    println!("p05_stress={}", analysis.solver_summary.p05_stress);
+    println!("p50_stress={}", analysis.solver_summary.p50_stress);
+    println!("p95_stress={}", analysis.solver_summary.p95_stress);
+    println!(
+        "collapse_probability={}",
+        analysis.solver_summary.collapse_probability
+    );
+    println!(
+        "computational_singularity_risk={}",
+        analysis.solver_summary.computational_singularity_risk
+    );
+    println!(
+        "solver_stability_score={}",
+        analysis.solver_summary.solver_stability_score
+    );
     println!("quantum_noise={}", analysis.quantum_noise);
     println!("relativistic_beta={}", analysis.relativistic_beta);
     println!("target_temp_kelvin={}", analysis.target_temp_kelvin);

@@ -1,4 +1,5 @@
 use crate::core::physics::{build_effective_physical_model, EffectivePhysicalModel};
+use crate::core::solver::{run_effective_solver, MonteCarloSummary};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fs;
@@ -56,6 +57,7 @@ pub struct FileAnalysis {
     pub hotspots: Vec<String>,
     pub intermediate_model: IntermediateModel,
     pub physical_model: EffectivePhysicalModel,
+    pub solver_summary: MonteCarloSummary,
     pub quantum_noise: f64,
     pub relativistic_beta: f64,
     pub target_temp_kelvin: f64,
@@ -128,6 +130,13 @@ pub fn analyze_file(
         target_temp_kelvin,
     );
 
+    let solver_summary = run_effective_solver(
+        &physical_model,
+        quantum_noise,
+        relativistic_beta,
+        target_temp_kelvin,
+    );
+
     let domain_pressure = match algorithm_class {
         AlgorithmClass::Crypto => 1.20,
         AlgorithmClass::Numerical => 1.00,
@@ -142,20 +151,32 @@ pub fn analyze_file(
         + physical_model.wheeler_dewitt_penalty * 0.08
         + (physical_model.effective_runtime_dilation - 1.0) * 2.5;
 
+    let solver_pressure = solver_summary.mean_stress * 1.8
+        + solver_summary.collapse_probability * 4.5
+        + solver_summary.computational_singularity_risk * 5.5;
+
     let stress = (quantum_noise * 18.0
         + relativistic_beta * 9.0
         + (target_temp_kelvin / 300.0)
         + structural_complexity / 20.0
         + hotspot_pressure
         + block_pressure
-        + physical_pressure)
+        + physical_pressure
+        + solver_pressure)
         * domain_pressure;
 
-    let stability_score = (100.0 - stress * 8.0).clamp(0.0, 100.0);
-    let singularity_risk = (stress / 12.0).clamp(0.0, 1.0);
+    let heuristic_stability = (100.0 - stress * 8.0).clamp(0.0, 100.0);
+    let stability_score = ((heuristic_stability * 0.45)
+        + (solver_summary.solver_stability_score * 0.55))
+        .clamp(0.0, 100.0);
+
+    let singularity_risk = ((stress / 12.0) * 0.40
+        + solver_summary.computational_singularity_risk * 0.60)
+        .clamp(0.0, 1.0);
 
     let recommendation = build_recommendation(
         algorithm_class,
+        solver_summary.collapse_probability,
         singularity_risk,
         stability_score,
         physical_model.recommended_qubit_budget,
@@ -176,6 +197,7 @@ pub fn analyze_file(
         hotspots,
         intermediate_model,
         physical_model,
+        solver_summary,
         quantum_noise,
         relativistic_beta,
         target_temp_kelvin,
@@ -472,12 +494,13 @@ fn build_information_channels(
 
 fn build_recommendation(
     algorithm_class: AlgorithmClass,
+    collapse_probability: f64,
     singularity_risk: f64,
     stability_score: f64,
     recommended_qubit_budget: u32,
 ) -> String {
     match algorithm_class {
-        AlgorithmClass::Crypto if singularity_risk > 0.45 => {
+        AlgorithmClass::Crypto if singularity_risk > 0.45 || collapse_probability > 0.35 => {
             format!(
                 "Elevated instability detected in crypto-oriented code. Reduce branching hotspots and evaluate lattice-based migration margin. Recommended effective qubit budget: {}.",
                 recommended_qubit_budget

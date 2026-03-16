@@ -12,7 +12,14 @@ fn crypto_case_is_detected() {
     assert!(!analysis.intermediate_model.critical_blocks.is_empty());
     assert!(!analysis.physical_model.blocks.is_empty());
     assert!(analysis.physical_model.recommended_qubit_budget > 0);
+    assert!(analysis.solver_summary.samples >= 64);
+    assert!(analysis.solver_summary.mean_stress >= 0.0);
+    assert!(analysis.solver_summary.collapse_probability >= 0.0);
+    assert!(analysis.solver_summary.collapse_probability <= 1.0);
+    assert!(analysis.solver_summary.computational_singularity_risk >= 0.0);
+    assert!(analysis.solver_summary.computational_singularity_risk <= 1.0);
     assert!(analysis.stability_score >= 0.0);
+    assert!(analysis.stability_score <= 100.0);
     assert!(analysis.singularity_risk >= 0.0);
     assert!(analysis.singularity_risk <= 1.0);
 
@@ -35,6 +42,7 @@ fn numerical_case_is_detected() {
     assert!(!analysis.intermediate_model.information_channels.is_empty());
     assert!(analysis.intermediate_model.structural_complexity > 0.0);
     assert!(analysis.physical_model.decoherence_rate > 0.0);
+    assert!(analysis.solver_summary.p95_stress >= analysis.solver_summary.p50_stress);
 }
 
 #[test]
@@ -53,4 +61,6 @@ fn ml_case_is_detected() {
 
     assert!(has_ml_block);
     assert!(analysis.physical_model.von_neumann_entropy >= 0.0);
+    assert!(analysis.solver_summary.solver_stability_score >= 0.0);
+    assert!(analysis.solver_summary.solver_stability_score <= 100.0);
 }
