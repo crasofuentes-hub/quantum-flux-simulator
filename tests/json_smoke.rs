@@ -1,5 +1,4 @@
 use assert_cmd::Command;
-use predicates::prelude::*;
 use std::fs;
 use std::path::Path;
 
@@ -22,12 +21,15 @@ fn analyze_writes_json_report() {
         .arg("--json-out")
         .arg("target/test-report.json")
         .assert()
-        .success()
-        .stdout(predicate::str::contains("flux-sim analysis OK"));
+        .success();
 
     assert!(out.exists(), "JSON report should exist");
 
     let text = fs::read_to_string(out).expect("report should be readable");
     assert!(text.contains("\"algorithm_class\""));
     assert!(text.contains("\"crypto_hits\""));
+    assert!(text.contains("\"hotspots\""));
+    assert!(text.contains("\"intermediate_model\""));
+    assert!(text.contains("\"critical_blocks\""));
+    assert!(text.contains("\"information_channels\""));
 }

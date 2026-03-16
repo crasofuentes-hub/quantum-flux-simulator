@@ -12,6 +12,33 @@ pub enum AlgorithmClass {
     General,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockKind {
+    Function,
+    Loop,
+    CryptoPrimitive,
+    NumericalKernel,
+    MlKernel,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CriticalBlock {
+    pub name: String,
+    pub kind: BlockKind,
+    pub estimated_cost: f64,
+    pub estimated_logical_qubits: u32,
+    pub information_density: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IntermediateModel {
+    pub critical_blocks: Vec<CriticalBlock>,
+    pub hotspots: Vec<String>,
+    pub information_channels: Vec<String>,
+    pub structural_complexity: f64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct FileAnalysis {
     pub path: String,
@@ -25,12 +52,26 @@ pub struct FileAnalysis {
     pub crypto_hits: Vec<String>,
     pub numerical_hits: Vec<String>,
     pub ml_hits: Vec<String>,
+    pub hotspots: Vec<String>,
+    pub intermediate_model: IntermediateModel,
     pub quantum_noise: f64,
     pub relativistic_beta: f64,
     pub target_temp_kelvin: f64,
     pub stability_score: f64,
     pub singularity_risk: f64,
     pub recommendation: String,
+}
+
+#[derive(Debug, Clone)]
+struct AnalysisSignals {
+    functions: usize,
+    fors: usize,
+    whiles: usize,
+    max_nesting: usize,
+    has_recursion: bool,
+    crypto_hits: Vec<String>,
+    numerical_hits: Vec<String>,
+    ml_hits: Vec<String>,
 }
 
 pub fn analyze_file(
@@ -44,49 +85,39 @@ pub fn analyze_file(
         .with_context(|| format!("failed to read source file: {}", path.display()))?;
 
     let language = detect_language(path);
-    let functions = count_matches(&text, &["fn ", "def ", "function "]);
-    let fors = count_matches(&text, &["for "]);
-    let whiles = count_matches(&text, &["while "]);
-    let max_nesting = estimate_max_nesting(&text);
-    let has_recursion = detect_recursion(&text, &language);
+    let signals = collect_signals(&text, &language);
 
-    let crypto_hits = detect_keywords(
-        &text,
-        &["aes", "rsa", "ecc", "sha", "kyber", "lattice", "ed25519"],
-    );
-    let numerical_hits = detect_keywords(
-        &text,
-        &[
-            "matmul",
-            "fft",
-            "conv",
-            "solve",
-            "integrate",
-            "jacobi",
-            "rk4",
-        ],
-    );
-    let ml_hits = detect_keywords(
-        &text,
-        &[
-            "gradient",
-            "backprop",
-            "optimizer",
-            "relu",
-            "softmax",
-            "loss",
-            "tensor",
-        ],
+    let algorithm_class = class_override.unwrap_or_else(|| {
+        classify(
+            &signals.crypto_hits,
+            &signals.numerical_hits,
+            &signals.ml_hits,
+        )
+    });
+
+    let structural_complexity = signals.functions as f64
+        + (signals.fors as f64 * 1.4)
+        + (signals.whiles as f64 * 1.7)
+        + (signals.max_nesting as f64 * 1.8)
+        + if signals.has_recursion { 2.0 } else { 0.0 };
+
+    let hotspots = build_hotspots(&signals);
+
+    let critical_blocks = build_critical_blocks(&signals, structural_complexity);
+
+    let information_channels = build_information_channels(
+        &algorithm_class,
+        &signals.crypto_hits,
+        &signals.numerical_hits,
+        &signals.ml_hits,
     );
 
-    let algorithm_class =
-        class_override.unwrap_or_else(|| classify(&crypto_hits, &numerical_hits, &ml_hits));
-
-    let complexity = functions as f64
-        + (fors as f64 * 1.4)
-        + (whiles as f64 * 1.7)
-        + (max_nesting as f64 * 1.8)
-        + if has_recursion { 2.0 } else { 0.0 };
+    let intermediate_model = IntermediateModel {
+        critical_blocks,
+        hotspots: hotspots.clone(),
+        information_channels,
+        structural_complexity,
+    };
 
     let domain_pressure = match algorithm_class {
         AlgorithmClass::Crypto => 1.20,
@@ -95,10 +126,15 @@ pub fn analyze_file(
         AlgorithmClass::General => 0.85,
     };
 
+    let hotspot_pressure = (hotspots.len() as f64) * 0.18;
+    let block_pressure = (intermediate_model.critical_blocks.len() as f64) * 0.12;
+
     let stress = (quantum_noise * 18.0
         + relativistic_beta * 9.0
         + (target_temp_kelvin / 300.0)
-        + complexity / 20.0)
+        + structural_complexity / 20.0
+        + hotspot_pressure
+        + block_pressure)
         * domain_pressure;
 
     let stability_score = (100.0 - stress * 8.0).clamp(0.0, 100.0);
@@ -110,14 +146,16 @@ pub fn analyze_file(
         path: path.display().to_string(),
         language,
         algorithm_class,
-        functions,
-        fors,
-        whiles,
-        max_nesting,
-        has_recursion,
-        crypto_hits,
-        numerical_hits,
-        ml_hits,
+        functions: signals.functions,
+        fors: signals.fors,
+        whiles: signals.whiles,
+        max_nesting: signals.max_nesting,
+        has_recursion: signals.has_recursion,
+        crypto_hits: signals.crypto_hits,
+        numerical_hits: signals.numerical_hits,
+        ml_hits: signals.ml_hits,
+        hotspots,
+        intermediate_model,
         quantum_noise,
         relativistic_beta,
         target_temp_kelvin,
@@ -125,6 +163,44 @@ pub fn analyze_file(
         singularity_risk,
         recommendation,
     })
+}
+
+fn collect_signals(text: &str, language: &str) -> AnalysisSignals {
+    AnalysisSignals {
+        functions: count_matches(text, &["fn ", "def ", "function "]),
+        fors: count_matches(text, &["for "]),
+        whiles: count_matches(text, &["while "]),
+        max_nesting: estimate_max_nesting(text),
+        has_recursion: detect_recursion(text, language),
+        crypto_hits: detect_keywords(
+            text,
+            &["aes", "rsa", "ecc", "sha", "kyber", "lattice", "ed25519"],
+        ),
+        numerical_hits: detect_keywords(
+            text,
+            &[
+                "matmul",
+                "fft",
+                "conv",
+                "solve",
+                "integrate",
+                "jacobi",
+                "rk4",
+            ],
+        ),
+        ml_hits: detect_keywords(
+            text,
+            &[
+                "gradient",
+                "backprop",
+                "optimizer",
+                "relu",
+                "softmax",
+                "loss",
+                "tensor",
+            ],
+        ),
+    }
 }
 
 fn detect_language(path: &Path) -> String {
@@ -251,6 +327,127 @@ fn classify(
     }
 
     AlgorithmClass::General
+}
+
+fn build_hotspots(signals: &AnalysisSignals) -> Vec<String> {
+    let mut hotspots = Vec::new();
+
+    if signals.functions >= 2 {
+        hotspots.push("multi-function control surface".to_string());
+    }
+    if signals.fors + signals.whiles >= 2 {
+        hotspots.push("iterative pressure".to_string());
+    }
+    if signals.max_nesting >= 2 {
+        hotspots.push("nested control depth".to_string());
+    }
+    if signals.has_recursion {
+        hotspots.push("recursive feedback path".to_string());
+    }
+    if !signals.crypto_hits.is_empty() {
+        hotspots.push("cryptographic primitive concentration".to_string());
+    }
+    if !signals.numerical_hits.is_empty() {
+        hotspots.push("numerical kernel concentration".to_string());
+    }
+    if !signals.ml_hits.is_empty() {
+        hotspots.push("gradient or training signal concentration".to_string());
+    }
+
+    hotspots
+}
+
+fn build_critical_blocks(
+    signals: &AnalysisSignals,
+    structural_complexity: f64,
+) -> Vec<CriticalBlock> {
+    let mut blocks = Vec::new();
+
+    if signals.functions > 0 {
+        blocks.push(CriticalBlock {
+            name: "function-surface".to_string(),
+            kind: BlockKind::Function,
+            estimated_cost: structural_complexity * 0.25,
+            estimated_logical_qubits: ((signals.functions as f64 * 6.0).ceil() as u32).max(4),
+            information_density: 0.45,
+        });
+    }
+
+    if signals.fors + signals.whiles > 0 {
+        blocks.push(CriticalBlock {
+            name: "iterative-core".to_string(),
+            kind: BlockKind::Loop,
+            estimated_cost: ((signals.fors + signals.whiles) as f64) * 2.4,
+            estimated_logical_qubits: (((signals.fors + signals.whiles) as f64 * 8.0).ceil()
+                as u32)
+                .max(6),
+            information_density: 0.62,
+        });
+    }
+
+    if !signals.crypto_hits.is_empty() {
+        blocks.push(CriticalBlock {
+            name: "crypto-core".to_string(),
+            kind: BlockKind::CryptoPrimitive,
+            estimated_cost: (signals.crypto_hits.len() as f64) * 3.2,
+            estimated_logical_qubits: ((signals.crypto_hits.len() as f64 * 16.0).ceil() as u32)
+                .max(16),
+            information_density: 0.88,
+        });
+    }
+
+    if !signals.numerical_hits.is_empty() {
+        blocks.push(CriticalBlock {
+            name: "numerical-core".to_string(),
+            kind: BlockKind::NumericalKernel,
+            estimated_cost: (signals.numerical_hits.len() as f64) * 2.8,
+            estimated_logical_qubits: ((signals.numerical_hits.len() as f64 * 12.0).ceil() as u32)
+                .max(12),
+            information_density: 0.81,
+        });
+    }
+
+    if !signals.ml_hits.is_empty() {
+        blocks.push(CriticalBlock {
+            name: "ml-core".to_string(),
+            kind: BlockKind::MlKernel,
+            estimated_cost: (signals.ml_hits.len() as f64) * 2.6,
+            estimated_logical_qubits: ((signals.ml_hits.len() as f64 * 14.0).ceil() as u32).max(14),
+            information_density: 0.84,
+        });
+    }
+
+    blocks
+}
+
+fn build_information_channels(
+    algorithm_class: &AlgorithmClass,
+    crypto_hits: &[String],
+    numerical_hits: &[String],
+    ml_hits: &[String],
+) -> Vec<String> {
+    let mut channels = Vec::new();
+
+    channels.push("control-flow".to_string());
+
+    match algorithm_class {
+        AlgorithmClass::Crypto => channels.push("key-material".to_string()),
+        AlgorithmClass::Numerical => channels.push("state-vector".to_string()),
+        AlgorithmClass::Ml => channels.push("gradient-flow".to_string()),
+        AlgorithmClass::General => channels.push("general-dataflow".to_string()),
+    }
+
+    if !crypto_hits.is_empty() {
+        channels.push("crypto-transform".to_string());
+    }
+    if !numerical_hits.is_empty() {
+        channels.push("numerical-propagation".to_string());
+    }
+    if !ml_hits.is_empty() {
+        channels.push("parameter-update".to_string());
+    }
+
+    channels
 }
 
 fn build_recommendation(

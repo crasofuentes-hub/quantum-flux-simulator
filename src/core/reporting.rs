@@ -20,6 +20,19 @@ pub fn print_text_summary(analysis: &FileAnalysis) {
     println!("whiles={}", analysis.whiles);
     println!("max_nesting={}", analysis.max_nesting);
     println!("has_recursion={}", analysis.has_recursion);
+    println!("hotspots={}", analysis.hotspots.join(", "));
+    println!(
+        "critical_blocks={}",
+        analysis.intermediate_model.critical_blocks.len()
+    );
+    println!(
+        "information_channels={}",
+        analysis.intermediate_model.information_channels.join(", ")
+    );
+    println!(
+        "structural_complexity={}",
+        analysis.intermediate_model.structural_complexity
+    );
     println!("quantum_noise={}", analysis.quantum_noise);
     println!("relativistic_beta={}", analysis.relativistic_beta);
     println!("target_temp_kelvin={}", analysis.target_temp_kelvin);
