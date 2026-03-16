@@ -4,6 +4,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct MonteCarloSummary {
     pub samples: usize,
+    pub seed: u64,
     pub mean_stress: f64,
     pub stress_variance: f64,
     pub p05_stress: f64,
@@ -14,11 +15,20 @@ pub struct MonteCarloSummary {
     pub solver_stability_score: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchAggregateSummary {
+    pub files_analyzed: usize,
+    pub mean_stability_score: f64,
+    pub max_singularity_risk: f64,
+    pub mean_collapse_probability: f64,
+}
+
 pub fn run_effective_solver(
     physical_model: &EffectivePhysicalModel,
     quantum_noise: f64,
     relativistic_beta: f64,
     target_temp_kelvin: f64,
+    seed: u64,
 ) -> MonteCarloSummary {
     let samples = 128usize;
     let thermal_factor = 1.0 + target_temp_kelvin / 300.0;
@@ -31,9 +41,9 @@ pub fn run_effective_solver(
     let mut values = Vec::with_capacity(samples);
 
     for i in 0..samples {
-        let q = quantum_perturbation(i, quantum_noise);
-        let t = thermal_perturbation(i, thermal_factor);
-        let r = relativistic_perturbation(i, relativistic_beta);
+        let q = quantum_perturbation(i, quantum_noise, seed);
+        let t = thermal_perturbation(i, thermal_factor, seed);
+        let r = relativistic_perturbation(i, relativistic_beta, seed);
 
         let combined = base_stress * (1.0 + q + t + r);
         values.push(combined.max(0.0));
@@ -62,6 +72,7 @@ pub fn run_effective_solver(
 
     MonteCarloSummary {
         samples,
+        seed,
         mean_stress,
         stress_variance,
         p05_stress,
@@ -73,18 +84,31 @@ pub fn run_effective_solver(
     }
 }
 
-fn quantum_perturbation(index: usize, quantum_noise: f64) -> f64 {
-    let x = pseudo_unit(index as u64 + 11);
+pub fn summarize_batch(
+    stabilities: &[f64],
+    risks: &[f64],
+    collapses: &[f64],
+) -> BatchAggregateSummary {
+    BatchAggregateSummary {
+        files_analyzed: stabilities.len(),
+        mean_stability_score: mean(stabilities),
+        max_singularity_risk: risks.iter().copied().fold(0.0, f64::max),
+        mean_collapse_probability: mean(collapses),
+    }
+}
+
+fn quantum_perturbation(index: usize, quantum_noise: f64, seed: u64) -> f64 {
+    let x = pseudo_unit(index as u64 + 11 + seed);
     ((x - 0.5) * 2.0) * (quantum_noise * 1.8)
 }
 
-fn thermal_perturbation(index: usize, thermal_factor: f64) -> f64 {
-    let x = pseudo_unit(index as u64 + 97);
+fn thermal_perturbation(index: usize, thermal_factor: f64, seed: u64) -> f64 {
+    let x = pseudo_unit(index as u64 + 97 + seed);
     ((x - 0.5) * 2.0) * ((thermal_factor - 1.0) * 0.18)
 }
 
-fn relativistic_perturbation(index: usize, relativistic_beta: f64) -> f64 {
-    let x = pseudo_unit(index as u64 + 211);
+fn relativistic_perturbation(index: usize, relativistic_beta: f64, seed: u64) -> f64 {
+    let x = pseudo_unit(index as u64 + 211 + seed);
     ((x - 0.5) * 2.0) * (relativistic_beta * 0.22)
 }
 

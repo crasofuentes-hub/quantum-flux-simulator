@@ -2,8 +2,13 @@ use crate::core::physics::{build_effective_physical_model, EffectivePhysicalMode
 use crate::core::solver::{run_effective_solver, MonteCarloSummary};
 use anyhow::{Context, Result};
 use serde::Serialize;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::Path;
+
+pub const REPORT_SCHEMA_VERSION: &str = "0.2.0";
+pub const ANALYSIS_VERSION: &str = "0.2.0";
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -42,7 +47,16 @@ pub struct IntermediateModel {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct RunMetadata {
+    pub report_schema_version: String,
+    pub analysis_version: String,
+    pub seed: u64,
+    pub input_fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct FileAnalysis {
+    pub run_metadata: RunMetadata,
     pub path: String,
     pub language: String,
     pub algorithm_class: AlgorithmClass,
@@ -85,10 +99,37 @@ pub fn analyze_file(
     target_temp_kelvin: f64,
     class_override: Option<AlgorithmClass>,
 ) -> Result<FileAnalysis> {
+    analyze_file_with_seed(
+        path,
+        quantum_noise,
+        relativistic_beta,
+        target_temp_kelvin,
+        class_override,
+        42,
+    )
+}
+
+pub fn analyze_file_with_seed(
+    path: &Path,
+    quantum_noise: f64,
+    relativistic_beta: f64,
+    target_temp_kelvin: f64,
+    class_override: Option<AlgorithmClass>,
+    seed: u64,
+) -> Result<FileAnalysis> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("failed to read source file: {}", path.display()))?;
 
     let language = detect_language(path);
+    let input_fingerprint = compute_input_fingerprint(
+        path,
+        &text,
+        quantum_noise,
+        relativistic_beta,
+        target_temp_kelvin,
+        seed,
+    );
+
     let signals = collect_signals(&text, &language);
 
     let algorithm_class = class_override.unwrap_or_else(|| {
@@ -135,6 +176,7 @@ pub fn analyze_file(
         quantum_noise,
         relativistic_beta,
         target_temp_kelvin,
+        seed,
     );
 
     let domain_pressure = match algorithm_class {
@@ -183,6 +225,12 @@ pub fn analyze_file(
     );
 
     Ok(FileAnalysis {
+        run_metadata: RunMetadata {
+            report_schema_version: REPORT_SCHEMA_VERSION.to_string(),
+            analysis_version: ANALYSIS_VERSION.to_string(),
+            seed,
+            input_fingerprint,
+        },
         path: path.display().to_string(),
         language,
         algorithm_class,
@@ -259,6 +307,24 @@ fn detect_language(path: &Path) -> String {
         "js" | "mjs" | "cjs" => "javascript".to_string(),
         _ => "unknown".to_string(),
     }
+}
+
+fn compute_input_fingerprint(
+    path: &Path,
+    text: &str,
+    quantum_noise: f64,
+    relativistic_beta: f64,
+    target_temp_kelvin: f64,
+    seed: u64,
+) -> String {
+    let mut hasher = DefaultHasher::new();
+    path.display().to_string().hash(&mut hasher);
+    text.hash(&mut hasher);
+    quantum_noise.to_bits().hash(&mut hasher);
+    relativistic_beta.to_bits().hash(&mut hasher);
+    target_temp_kelvin.to_bits().hash(&mut hasher);
+    seed.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 fn count_matches(text: &str, needles: &[&str]) -> usize {
