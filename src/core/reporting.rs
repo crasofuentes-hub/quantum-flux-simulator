@@ -33,6 +33,26 @@ pub fn print_text_summary(analysis: &FileAnalysis) {
         "structural_complexity={}",
         analysis.intermediate_model.structural_complexity
     );
+    println!(
+        "decoherence_rate={}",
+        analysis.physical_model.decoherence_rate
+    );
+    println!(
+        "runtime_dilation={}",
+        analysis.physical_model.effective_runtime_dilation
+    );
+    println!(
+        "von_neumann_entropy={}",
+        analysis.physical_model.von_neumann_entropy
+    );
+    println!(
+        "wheeler_dewitt_penalty={}",
+        analysis.physical_model.wheeler_dewitt_penalty
+    );
+    println!(
+        "recommended_qubit_budget={}",
+        analysis.physical_model.recommended_qubit_budget
+    );
     println!("quantum_noise={}", analysis.quantum_noise);
     println!("relativistic_beta={}", analysis.relativistic_beta);
     println!("target_temp_kelvin={}", analysis.target_temp_kelvin);

@@ -1,7 +1,4 @@
-#[path = "../src/core/analysis.rs"]
-mod analysis;
-
-use analysis::{analyze_file, AlgorithmClass, BlockKind};
+use flux_sim::core::analysis::{analyze_file, AlgorithmClass, BlockKind};
 use std::path::Path;
 
 #[test]
@@ -13,6 +10,8 @@ fn crypto_case_is_detected() {
     assert!(!analysis.crypto_hits.is_empty());
     assert!(!analysis.hotspots.is_empty());
     assert!(!analysis.intermediate_model.critical_blocks.is_empty());
+    assert!(!analysis.physical_model.blocks.is_empty());
+    assert!(analysis.physical_model.recommended_qubit_budget > 0);
     assert!(analysis.stability_score >= 0.0);
     assert!(analysis.singularity_risk >= 0.0);
     assert!(analysis.singularity_risk <= 1.0);
@@ -35,6 +34,7 @@ fn numerical_case_is_detected() {
     assert!(!analysis.numerical_hits.is_empty());
     assert!(!analysis.intermediate_model.information_channels.is_empty());
     assert!(analysis.intermediate_model.structural_complexity > 0.0);
+    assert!(analysis.physical_model.decoherence_rate > 0.0);
 }
 
 #[test]
@@ -52,4 +52,5 @@ fn ml_case_is_detected() {
         .any(|b| b.kind == BlockKind::MlKernel);
 
     assert!(has_ml_block);
+    assert!(analysis.physical_model.von_neumann_entropy >= 0.0);
 }

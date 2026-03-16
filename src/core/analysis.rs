@@ -1,3 +1,4 @@
+use crate::core::physics::{build_effective_physical_model, EffectivePhysicalModel};
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fs;
@@ -54,6 +55,7 @@ pub struct FileAnalysis {
     pub ml_hits: Vec<String>,
     pub hotspots: Vec<String>,
     pub intermediate_model: IntermediateModel,
+    pub physical_model: EffectivePhysicalModel,
     pub quantum_noise: f64,
     pub relativistic_beta: f64,
     pub target_temp_kelvin: f64,
@@ -102,7 +104,6 @@ pub fn analyze_file(
         + if signals.has_recursion { 2.0 } else { 0.0 };
 
     let hotspots = build_hotspots(&signals);
-
     let critical_blocks = build_critical_blocks(&signals, structural_complexity);
 
     let information_channels = build_information_channels(
@@ -119,6 +120,14 @@ pub fn analyze_file(
         structural_complexity,
     };
 
+    let physical_model = build_effective_physical_model(
+        &intermediate_model.critical_blocks,
+        algorithm_class,
+        quantum_noise,
+        relativistic_beta,
+        target_temp_kelvin,
+    );
+
     let domain_pressure = match algorithm_class {
         AlgorithmClass::Crypto => 1.20,
         AlgorithmClass::Numerical => 1.00,
@@ -128,19 +137,29 @@ pub fn analyze_file(
 
     let hotspot_pressure = (hotspots.len() as f64) * 0.18;
     let block_pressure = (intermediate_model.critical_blocks.len() as f64) * 0.12;
+    let physical_pressure = physical_model.decoherence_rate * 6.0
+        + physical_model.von_neumann_entropy * 0.75
+        + physical_model.wheeler_dewitt_penalty * 0.08
+        + (physical_model.effective_runtime_dilation - 1.0) * 2.5;
 
     let stress = (quantum_noise * 18.0
         + relativistic_beta * 9.0
         + (target_temp_kelvin / 300.0)
         + structural_complexity / 20.0
         + hotspot_pressure
-        + block_pressure)
+        + block_pressure
+        + physical_pressure)
         * domain_pressure;
 
     let stability_score = (100.0 - stress * 8.0).clamp(0.0, 100.0);
     let singularity_risk = (stress / 12.0).clamp(0.0, 1.0);
 
-    let recommendation = build_recommendation(algorithm_class, singularity_risk, stability_score);
+    let recommendation = build_recommendation(
+        algorithm_class,
+        singularity_risk,
+        stability_score,
+        physical_model.recommended_qubit_budget,
+    );
 
     Ok(FileAnalysis {
         path: path.display().to_string(),
@@ -156,6 +175,7 @@ pub fn analyze_file(
         ml_hits: signals.ml_hits,
         hotspots,
         intermediate_model,
+        physical_model,
         quantum_noise,
         relativistic_beta,
         target_temp_kelvin,
@@ -454,25 +474,44 @@ fn build_recommendation(
     algorithm_class: AlgorithmClass,
     singularity_risk: f64,
     stability_score: f64,
+    recommended_qubit_budget: u32,
 ) -> String {
     match algorithm_class {
         AlgorithmClass::Crypto if singularity_risk > 0.45 => {
-            "Elevated instability detected in crypto-oriented code. Reduce branching hotspots and evaluate lattice-based migration margin.".to_string()
+            format!(
+                "Elevated instability detected in crypto-oriented code. Reduce branching hotspots and evaluate lattice-based migration margin. Recommended effective qubit budget: {}.",
+                recommended_qubit_budget
+            )
         }
         AlgorithmClass::Crypto => {
-            "Crypto-oriented profile is acceptable. Preserve deterministic paths and review high-cost loops around key operations.".to_string()
+            format!(
+                "Crypto-oriented profile is acceptable. Preserve deterministic paths and review high-cost loops around key operations. Recommended effective qubit budget: {}.",
+                recommended_qubit_budget
+            )
         }
         AlgorithmClass::Numerical if stability_score < 70.0 => {
-            "Numerical workload shows moderate instability. Reduce nesting depth and isolate iterative kernels for tighter control.".to_string()
+            format!(
+                "Numerical workload shows moderate instability. Reduce nesting depth and isolate iterative kernels for tighter control. Recommended effective qubit budget: {}.",
+                recommended_qubit_budget
+            )
         }
         AlgorithmClass::Numerical => {
-            "Numerical workload is stable enough for the current regime. Focus on kernel extraction and loop regularity.".to_string()
+            format!(
+                "Numerical workload is stable enough for the current regime. Focus on kernel extraction and loop regularity. Recommended effective qubit budget: {}.",
+                recommended_qubit_budget
+            )
         }
         AlgorithmClass::Ml => {
-            "ML-oriented structure detected. Prioritize matrix kernels, gradient flow hotspots, and bounded iterative behavior.".to_string()
+            format!(
+                "ML-oriented structure detected. Prioritize matrix kernels, gradient flow hotspots, and bounded iterative behavior. Recommended effective qubit budget: {}.",
+                recommended_qubit_budget
+            )
         }
         AlgorithmClass::General => {
-            "General-purpose workload detected. Improve structural regularity before running more aggressive simulation layers.".to_string()
+            format!(
+                "General-purpose workload detected. Improve structural regularity before running more aggressive simulation layers. Recommended effective qubit budget: {}.",
+                recommended_qubit_budget
+            )
         }
     }
 }

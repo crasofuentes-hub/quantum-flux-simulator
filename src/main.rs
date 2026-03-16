@@ -1,9 +1,7 @@
-mod core;
-
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use core::analysis::{analyze_file, AlgorithmClass, FileAnalysis};
-use core::reporting::{print_text_summary, write_json_report};
+use flux_sim::core::analysis::{analyze_file, AlgorithmClass, FileAnalysis};
+use flux_sim::core::reporting::{print_text_summary, write_json_report};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser, Debug)]

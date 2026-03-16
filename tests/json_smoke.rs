@@ -32,4 +32,8 @@ fn analyze_writes_json_report() {
     assert!(text.contains("\"intermediate_model\""));
     assert!(text.contains("\"critical_blocks\""));
     assert!(text.contains("\"information_channels\""));
+    assert!(text.contains("\"physical_model\""));
+    assert!(text.contains("\"decoherence_rate\""));
+    assert!(text.contains("\"von_neumann_entropy\""));
+    assert!(text.contains("\"recommended_qubit_budget\""));
 }
