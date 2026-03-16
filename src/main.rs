@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use flux_sim::core::analysis::{
     analyze_file_with_seed, AlgorithmClass, FileAnalysis, ANALYSIS_VERSION, REPORT_SCHEMA_VERSION,
 };
+use flux_sim::core::benchmark::run_synthetic_benchmark;
 use flux_sim::core::reporting::{
     print_text_summary, write_batch_json_report, write_json_report, BatchReport,
 };
@@ -66,6 +67,19 @@ enum Commands {
         json_out: PathBuf,
         #[arg(long)]
         algorithm_class: Option<String>,
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+    },
+    Benchmark {
+        input_dir: PathBuf,
+        #[arg(long, default_value_t = 0.01)]
+        quantum_noise: f64,
+        #[arg(long, default_value = "0.0c")]
+        relativistic: String,
+        #[arg(long, default_value = "300K")]
+        target_temp: String,
+        #[arg(long)]
+        json_out: PathBuf,
         #[arg(long, default_value_t = 42)]
         seed: u64,
     },
@@ -318,6 +332,40 @@ fn main() -> Result<()> {
                 algorithm_class.as_deref(),
                 seed,
             )?;
+        }
+        Commands::Benchmark {
+            input_dir,
+            quantum_noise,
+            relativistic,
+            target_temp,
+            json_out,
+            seed,
+        } => {
+            let beta = parse_relativistic_fraction(&relativistic)?;
+            let kelvin = parse_kelvin(&target_temp)?;
+            let report = run_synthetic_benchmark(&input_dir, quantum_noise, beta, kelvin, seed)?;
+            let json = serde_json::to_string_pretty(&report)
+                .context("failed to serialize benchmark report")?;
+            fs::write(&json_out, json).with_context(|| {
+                format!("failed to write benchmark JSON: {}", json_out.display())
+            })?;
+            println!("flux-sim benchmark OK");
+            println!("files_analyzed={}", report.aggregate.files_analyzed);
+            println!("class_accuracy={}", report.aggregate.class_accuracy);
+            println!("mean_baseline_risk={}", report.aggregate.mean_baseline_risk);
+            println!("mean_model_risk={}", report.aggregate.mean_model_risk);
+            println!(
+                "mean_baseline_stability={}",
+                report.aggregate.mean_baseline_stability
+            );
+            println!(
+                "mean_model_stability={}",
+                report.aggregate.mean_model_stability
+            );
+            println!(
+                "mean_collapse_probability={}",
+                report.aggregate.mean_collapse_probability
+            );
         }
     }
 
