@@ -96,7 +96,59 @@ L_k \rho_n L_k^\dagger
 
 with a fixed effective step size \( \Delta t = 0.05 \) in the current model-building path.
 
-## 5. Numerical stabilization
+## 5. Parameter traceability per block
+
+The current implementation records explicit trace components for each effective physical block.
+
+### Hamiltonian trace
+For each block the serialized trace includes:
+
+- `estimated_cost`
+- `information_density`
+- `kind_factor`
+- `domain_factor`
+- `resulting_energy`
+
+So the effective energy is traceable as:
+
+\[
+E_{\mathrm{eff}} =
+\text{estimated\_cost}
+\cdot
+\text{information\_density}
+\cdot
+\text{kind\_factor}
+\cdot
+\text{domain\_factor}
+\]
+
+### Coupling trace
+For each block the serialized trace includes:
+
+- `base_coupling`
+- `density_contribution`
+- `resulting_coupling`
+
+with current effective form
+
+\[
+g_{\mathrm{eff}} = 0.15 + 0.35 \cdot \text{information\_density}
+\]
+
+### Lindblad trace
+For each block the serialized trace includes:
+
+- `quantum_noise`
+- `thermal_factor`
+- `relativistic_beta`
+- `logical_qubits`
+- `information_density`
+- `dephasing_gamma`
+- `amplitude_gamma`
+
+This means the generated rates are no longer only present as final values; their construction inputs are also preserved in the output model.
+
+## 6. Numerical stabilization
 
 After each step, the implementation applies stabilization:
 
@@ -116,7 +168,7 @@ After each step, the implementation applies stabilization:
 
 This means the current implementation is designed to preserve a **reasonable physical region numerically**, not to provide a formal CPTP guarantee.
 
-## 6. Effective entropy
+## 7. Effective entropy
 
 Von Neumann entropy is computed from the 2x2 eigenvalue formula using
 
@@ -132,7 +184,7 @@ S(\rho) = - \sum_i \lambda_i \ln \lambda_i
 
 with small positive flooring to avoid invalid logarithms under numerical error.
 
-## 7. Relativistic factor
+## 8. Relativistic factor
 
 The effective relativistic factor is
 
@@ -145,7 +197,7 @@ with \(\beta\) clamped below 1 for numerical stability.
 This is currently used as an effective scaling factor inside the model.
 It is not a full relativistic simulation.
 
-## 8. Global constraint
+## 9. Global constraint
 
 The current model includes an explicit global constraint penalty built from:
 
@@ -156,7 +208,7 @@ The current model includes an explicit global constraint penalty built from:
 This is a scalar regularization term.
 It is **not** a Wheeler-DeWitt solver and should not be described as one.
 
-## 9. What is currently preserved or controlled
+## 10. What is currently preserved or controlled
 
 ### Explicitly tested or numerically controlled
 - near-unit trace after stabilization
@@ -164,6 +216,8 @@ It is **not** a Wheeler-DeWitt solver and should not be described as one.
 - non-negative or near-physical entropy values
 - finite state entries after repeated evolution
 - reasonable 2x2 eigenvalue region under tested conditions
+- small regime sweep across multiple noise / beta / temperature combinations
+- explicit parameter-trace consistency between serialized trace fields and final block values
 
 ### Not formally guaranteed
 - full CPTP proof
@@ -171,11 +225,11 @@ It is **not** a Wheeler-DeWitt solver and should not be described as one.
 - physical calibration against experimental systems
 - exact positivity preservation without stabilization
 
-## 10. Correct current claim
+## 11. Correct current claim
 
 The correct claim is:
 
-> `flux-sim` implements a reproducible effective 2x2 density-evolution model with Lindblad-like dissipative terms, explicit numerical stabilization, internal invariants testing, and documented limits.
+> `flux-sim` implements a reproducible effective 2x2 density-evolution model with Lindblad-like dissipative terms, explicit numerical stabilization, internal invariants testing, parameter traceability, and documented limits.
 
 The project does **not** currently claim:
 
