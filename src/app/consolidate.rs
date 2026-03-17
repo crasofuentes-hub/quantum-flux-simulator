@@ -5,6 +5,10 @@ use crate::core::reporting::{
     render_consolidated_markdown, try_read_external_comparison_json,
     write_consolidated_json_report, ConsolidatedComparisonReport, ExternalBaselineReference,
 };
+use crate::util::experiment_manifest::{
+    build_experiment_manifest, default_manifest_path, write_experiment_manifest,
+    ExperimentManifestSpec,
+};
 use crate::util::params::{parse_kelvin, parse_relativistic_fraction};
 use crate::util::paths::ensure_parent_dir;
 use anyhow::{bail, Context, Result};
@@ -74,7 +78,7 @@ pub fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
         benchmark,
         ablation,
         external_baseline,
-        external_comparison_json,
+        external_comparison_json: external_comparison_json.clone(),
     };
 
     write_consolidated_json_report(request.json_out, &report)?;
@@ -86,6 +90,23 @@ pub fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
             request.markdown_out.display()
         )
     })?;
+
+    let manifest_path = default_manifest_path(request.json_out);
+    let manifest = build_experiment_manifest(&ExperimentManifestSpec {
+        experiment_type: "consolidate",
+        input_path: request.input_dir,
+        quantum_noise: request.quantum_noise,
+        relativistic_beta: beta,
+        target_temp_kelvin: kelvin,
+        seed: request.seed,
+        generated_outputs: vec![
+            request.json_out.to_string_lossy().replace('\\', "/"),
+            request.markdown_out.to_string_lossy().replace('\\', "/"),
+            manifest_path.to_string_lossy().replace('\\', "/"),
+        ],
+        external_comparison_ingested: Some(external_comparison_json.is_some()),
+    })?;
+    write_experiment_manifest(&manifest_path, &manifest)?;
 
     println!("flux-sim consolidate OK");
     println!(
@@ -99,6 +120,7 @@ pub fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
     );
     println!("json_out={}", request.json_out.display());
     println!("markdown_out={}", request.markdown_out.display());
+    println!("manifest_out={}", manifest_path.display());
 
     Ok(())
 }

@@ -6,6 +6,7 @@ use std::path::Path;
 fn consolidate_writes_json_and_markdown_reports() {
     let json_out = Path::new("target/consolidated-report.json");
     let md_out = Path::new("target/consolidated-report.md");
+    let manifest_out = Path::new("target/consolidated-report.manifest.json");
     let external_comparison = Path::new("target/comparison-report.json");
 
     if json_out.exists() {
@@ -13,6 +14,9 @@ fn consolidate_writes_json_and_markdown_reports() {
     }
     if md_out.exists() {
         fs::remove_file(md_out).expect("old consolidated markdown should be removable");
+    }
+    if manifest_out.exists() {
+        fs::remove_file(manifest_out).expect("old consolidated manifest should be removable");
     }
     if external_comparison.exists() {
         fs::remove_file(external_comparison)
@@ -39,6 +43,7 @@ fn consolidate_writes_json_and_markdown_reports() {
 
     assert!(json_out.exists(), "consolidated JSON report should exist");
     assert!(md_out.exists(), "consolidated markdown report should exist");
+    assert!(manifest_out.exists(), "consolidated manifest should exist");
 
     let json_text = fs::read_to_string(json_out).expect("consolidated JSON should be readable");
     assert!(json_text.contains("\"benchmark\""));
@@ -52,4 +57,9 @@ fn consolidate_writes_json_and_markdown_reports() {
     assert!(md_text.contains("## Internal benchmark summary"));
     assert!(md_text.contains("## Ablation summary"));
     assert!(md_text.contains("## External baseline status"));
+
+    let manifest_text =
+        fs::read_to_string(manifest_out).expect("consolidated manifest should be readable");
+    assert!(manifest_text.contains("\"experiment_type\": \"consolidate\""));
+    assert!(manifest_text.contains("\"external_comparison_ingested\": false"));
 }

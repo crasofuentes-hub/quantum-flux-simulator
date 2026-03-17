@@ -1,5 +1,9 @@
 use crate::app::requests::AblationRequest;
 use crate::core::benchmark::{render_ablation_markdown, run_synthetic_ablation};
+use crate::util::experiment_manifest::{
+    build_experiment_manifest, default_manifest_path, write_experiment_manifest,
+    ExperimentManifestSpec,
+};
 use crate::util::params::{parse_kelvin, parse_relativistic_fraction};
 use crate::util::paths::ensure_parent_dir;
 use anyhow::{bail, Context, Result};
@@ -47,11 +51,29 @@ pub fn execute_ablation(request: &AblationRequest<'_>) -> Result<()> {
         )
     })?;
 
+    let manifest_path = default_manifest_path(request.json_out);
+    let manifest = build_experiment_manifest(&ExperimentManifestSpec {
+        experiment_type: "ablation",
+        input_path: request.input_dir,
+        quantum_noise: request.quantum_noise,
+        relativistic_beta: beta,
+        target_temp_kelvin: kelvin,
+        seed: request.seed,
+        generated_outputs: vec![
+            request.json_out.to_string_lossy().replace('\\', "/"),
+            request.markdown_out.to_string_lossy().replace('\\', "/"),
+            manifest_path.to_string_lossy().replace('\\', "/"),
+        ],
+        external_comparison_ingested: None,
+    })?;
+    write_experiment_manifest(&manifest_path, &manifest)?;
+
     println!("flux-sim ablation OK");
     println!("files_analyzed={}", report.entries.len());
     println!("variants={}", report.aggregate.len());
     println!("json_out={}", request.json_out.display());
     println!("markdown_out={}", request.markdown_out.display());
+    println!("manifest_out={}", manifest_path.display());
 
     Ok(())
 }

@@ -5,8 +5,13 @@ use std::path::Path;
 #[test]
 fn benchmark_writes_json_report() {
     let out = Path::new("target/benchmark-report.json");
+    let manifest = Path::new("target/benchmark-report.manifest.json");
+
     if out.exists() {
         fs::remove_file(out).expect("old benchmark report should be removable");
+    }
+    if manifest.exists() {
+        fs::remove_file(manifest).expect("old benchmark manifest should be removable");
     }
 
     let mut cmd = Command::cargo_bin("flux-sim").expect("binary should exist");
@@ -26,10 +31,16 @@ fn benchmark_writes_json_report() {
         .success();
 
     assert!(out.exists(), "benchmark JSON report should exist");
+    assert!(manifest.exists(), "benchmark manifest should exist");
 
     let text = fs::read_to_string(out).expect("benchmark report should be readable");
     assert!(text.contains("\"class_accuracy\""));
     assert!(text.contains("\"mean_baseline_risk\""));
     assert!(text.contains("\"mean_model_risk\""));
     assert!(text.contains("\"entries\""));
+
+    let manifest_text =
+        fs::read_to_string(manifest).expect("benchmark manifest should be readable");
+    assert!(manifest_text.contains("\"experiment_type\": \"benchmark\""));
+    assert!(manifest_text.contains("\"input_kind\": \"directory\""));
 }

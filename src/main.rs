@@ -1,18 +1,16 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use flux_sim::app::ablation::execute_ablation;
 use flux_sim::app::analyze::execute_analysis;
 use flux_sim::app::batch::execute_batch;
+use flux_sim::app::benchmark::execute_benchmark;
 use flux_sim::app::consolidate::execute_consolidate;
 use flux_sim::app::reproduce::execute_reproduce;
 use flux_sim::app::requests::{
     AblationRequest, AnalysisRequest, ConsolidateRequest, ReproduceRequest,
 };
 use flux_sim::core::analysis::AlgorithmClass;
-use flux_sim::core::benchmark::run_synthetic_benchmark;
 use flux_sim::core::reporting::print_text_summary;
-use flux_sim::util::params::{parse_kelvin, parse_relativistic_fraction};
-use std::fs;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -223,31 +221,14 @@ fn main() -> Result<()> {
             json_out,
             seed,
         } => {
-            let beta = parse_relativistic_fraction(&relativistic)?;
-            let kelvin = parse_kelvin(&target_temp)?;
-            let report = run_synthetic_benchmark(&input_dir, quantum_noise, beta, kelvin, seed)?;
-            let json = serde_json::to_string_pretty(&report)
-                .context("failed to serialize benchmark report")?;
-            fs::write(&json_out, json).with_context(|| {
-                format!("failed to write benchmark JSON: {}", json_out.display())
-            })?;
-            println!("flux-sim benchmark OK");
-            println!("files_analyzed={}", report.aggregate.files_analyzed);
-            println!("class_accuracy={}", report.aggregate.class_accuracy);
-            println!("mean_baseline_risk={}", report.aggregate.mean_baseline_risk);
-            println!("mean_model_risk={}", report.aggregate.mean_model_risk);
-            println!(
-                "mean_baseline_stability={}",
-                report.aggregate.mean_baseline_stability
-            );
-            println!(
-                "mean_model_stability={}",
-                report.aggregate.mean_model_stability
-            );
-            println!(
-                "mean_collapse_probability={}",
-                report.aggregate.mean_collapse_probability
-            );
+            execute_benchmark(
+                &input_dir,
+                quantum_noise,
+                &relativistic,
+                &target_temp,
+                &json_out,
+                seed,
+            )?;
         }
         Commands::Ablation {
             input_dir,
