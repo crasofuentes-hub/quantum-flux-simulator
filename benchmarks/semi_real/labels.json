@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "corpus_id": "semi_real_v1",
+  "description": "Small curated semi-real benchmark corpus for reproducible internal comparisons.",
+  "cases": [
+    {
+      "file": "crypto_service.py",
+      "expected_class": "crypto",
+      "case_type": "semi_real",
+      "hypothesis": "Should be detected as crypto-oriented and show non-trivial effective-model pressure.",
+      "notes": [
+        "request-like workflow",
+        "hashing and signature vocabulary",
+        "not a real cryptographic audit target"
+      ]
+    },
+    {
+      "file": "numerical_solver.py",
+      "expected_class": "numerical",
+      "case_type": "semi_real",
+      "hypothesis": "Should be detected as numerical and preserve a profile distinct from crypto and ML cases.",
+      "notes": [
+        "integration-like workflow",
+        "iterative loops",
+        "lightweight solver proxy"
+      ]
+    },
+    {
+      "file": "ml_training_loop.py",
+      "expected_class": "ml",
+      "case_type": "semi_real",
+      "hypothesis": "Should be detected as ML-oriented through gradient/loss/optimizer style terms.",
+      "notes": [
+        "training-loop vocabulary",
+        "toy tensor/activation flow",
+        "not a full ML pipeline"
+      ]
+    },
+    {
+      "file": "general_pipeline.py",
+      "expected_class": "general",
+      "case_type": "semi_real",
+      "hypothesis": "Should remain a general/control-like case with comparatively milder scores.",
+      "notes": [
+        "normalization + aggregation pipeline",
+        "control-like workload",
+        "non-specialized code shape"
+      ]
+    }
+  ]
+}
