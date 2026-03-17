@@ -1,5 +1,8 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use flux_sim::app::requests::{
+    AblationRequest, AnalysisRequest, ConsolidateRequest, ReproduceMode, ReproduceRequest,
+};
 use flux_sim::core::analysis::{
     analyze_file_with_seed, AlgorithmClass, FileAnalysis, ANALYSIS_VERSION, REPORT_SCHEMA_VERSION,
 };
@@ -13,15 +16,18 @@ use flux_sim::core::reporting::{
 };
 use flux_sim::core::solver::summarize_batch;
 use flux_sim::core::visualization::write_png_report;
+use flux_sim::util::fingerprint::fingerprint_path;
+use flux_sim::util::params::{parse_kelvin, parse_relativistic_fraction};
+use flux_sim::util::paths::{
+    default_reproduce_output_path, detect_input_kind, ensure_parent_dir, ensure_source_exists,
+    normalize_display_path,
+};
 use serde::Serialize;
-use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPRO_MANIFEST_SCHEMA_VERSION: &str = "1.0.0";
-const FNV1A64_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
-const FNV1A64_PRIME: u64 = 0x00000100000001B3;
 
 #[derive(Parser, Debug)]
 #[command(name = "flux-sim")]
@@ -143,67 +149,6 @@ enum Commands {
     },
 }
 
-#[derive(Debug, Clone)]
-struct AnalysisRequest<'a> {
-    source_path: &'a Path,
-    quantum_noise: f64,
-    relativistic: &'a str,
-    target_temp: &'a str,
-    json_out: Option<&'a Path>,
-    plot_out: Option<&'a Path>,
-    algorithm_class: Option<&'a str>,
-    seed: u64,
-}
-
-#[derive(Debug, Clone)]
-struct ReproduceRequest<'a> {
-    input_path: &'a Path,
-    quantum_noise: f64,
-    relativistic: &'a str,
-    target_temp: &'a str,
-    json_out: Option<&'a Path>,
-    manifest_out: Option<&'a Path>,
-    algorithm_class: Option<&'a str>,
-    seed: u64,
-}
-
-#[derive(Debug, Clone)]
-struct AblationRequest<'a> {
-    input_dir: &'a Path,
-    quantum_noise: f64,
-    relativistic: &'a str,
-    target_temp: &'a str,
-    json_out: &'a Path,
-    markdown_out: &'a Path,
-    seed: u64,
-}
-
-#[derive(Debug, Clone)]
-struct ConsolidateRequest<'a> {
-    input_dir: &'a Path,
-    quantum_noise: f64,
-    relativistic: &'a str,
-    target_temp: &'a str,
-    json_out: &'a Path,
-    markdown_out: &'a Path,
-    seed: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ReproduceMode {
-    Analyze,
-    Batch,
-}
-
-impl ReproduceMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Analyze => "analyze",
-            Self::Batch => "batch",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize)]
 struct ReproManifest {
     manifest_schema_version: String,
@@ -220,52 +165,6 @@ struct ReproManifest {
     input_fingerprint: String,
     output_report_path: String,
     generated_outputs: Vec<String>,
-}
-
-fn parse_relativistic_fraction(input: &str) -> Result<f64> {
-    let value = input.trim();
-    if !value.ends_with('c') {
-        bail!("relativistic must end with 'c', for example 0.8c");
-    }
-
-    let number = &value[..value.len() - 1];
-    let beta: f64 = number
-        .parse()
-        .with_context(|| format!("invalid relativistic value: {input}"))?;
-
-    if !(0.0..1.0).contains(&beta) && beta != 0.0 {
-        bail!("relativistic fraction must be in [0.0, 1.0)");
-    }
-
-    Ok(beta)
-}
-
-fn parse_kelvin(input: &str) -> Result<f64> {
-    let value = input.trim();
-    if !value.ends_with('K') {
-        bail!("target-temp must end with 'K', for example 77K");
-    }
-
-    let number = &value[..value.len() - 1];
-    let kelvin: f64 = number
-        .parse()
-        .with_context(|| format!("invalid Kelvin value: {input}"))?;
-
-    if kelvin < 0.0 {
-        bail!("target temperature cannot be negative");
-    }
-
-    Ok(kelvin)
-}
-
-fn ensure_source_exists(path: &Path) -> Result<()> {
-    if !path.exists() {
-        bail!("source file does not exist: {}", path.display());
-    }
-    if !path.is_file() {
-        bail!("source path is not a file: {}", path.display());
-    }
-    Ok(())
 }
 
 fn resolve_algorithm_class(input: Option<&str>) -> Option<AlgorithmClass> {
@@ -312,10 +211,10 @@ fn execute_batch(
     seed: u64,
 ) -> Result<()> {
     if !input_dir.exists() {
-        bail!("input_dir does not exist: {}", input_dir.display());
+        anyhow::bail!("input_dir does not exist: {}", input_dir.display());
     }
     if !input_dir.is_dir() {
-        bail!("input_dir is not a directory: {}", input_dir.display());
+        anyhow::bail!("input_dir is not a directory: {}", input_dir.display());
     }
 
     let beta = parse_relativistic_fraction(relativistic)?;
@@ -392,10 +291,10 @@ fn execute_batch(
 
 fn execute_ablation(request: &AblationRequest<'_>) -> Result<()> {
     if !request.input_dir.exists() {
-        bail!("input_dir does not exist: {}", request.input_dir.display());
+        anyhow::bail!("input_dir does not exist: {}", request.input_dir.display());
     }
     if !request.input_dir.is_dir() {
-        bail!(
+        anyhow::bail!(
             "input_dir is not a directory: {}",
             request.input_dir.display()
         );
@@ -443,10 +342,10 @@ fn execute_ablation(request: &AblationRequest<'_>) -> Result<()> {
 
 fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
     if !request.input_dir.exists() {
-        bail!("input_dir does not exist: {}", request.input_dir.display());
+        anyhow::bail!("input_dir does not exist: {}", request.input_dir.display());
     }
     if !request.input_dir.is_dir() {
-        bail!(
+        anyhow::bail!(
             "input_dir is not a directory: {}",
             request.input_dir.display()
         );
@@ -535,7 +434,7 @@ fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
 
 fn execute_reproduce(request: &ReproduceRequest<'_>) -> Result<()> {
     if !request.input_path.exists() {
-        bail!(
+        anyhow::bail!(
             "input_path does not exist: {}",
             request.input_path.display()
         );
@@ -622,145 +521,11 @@ fn execute_reproduce(request: &ReproduceRequest<'_>) -> Result<()> {
     Ok(())
 }
 
-fn detect_input_kind(path: &Path) -> Result<&'static str> {
-    if path.is_file() {
-        Ok("file")
-    } else if path.is_dir() {
-        Ok("directory")
-    } else {
-        bail!(
-            "input_path is neither a file nor a directory: {}",
-            path.display()
-        );
-    }
-}
-
-fn default_reproduce_output_path(input_path: &Path, mode: ReproduceMode, suffix: &str) -> PathBuf {
-    let parent = input_path
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    let base_name = match mode {
-        ReproduceMode::Analyze => input_path
-            .file_stem()
-            .map(OsString::from)
-            .unwrap_or_else(|| OsString::from("analysis")),
-        ReproduceMode::Batch => input_path
-            .file_name()
-            .map(OsString::from)
-            .unwrap_or_else(|| OsString::from("batch")),
-    };
-
-    let file_name = format!("{}.reproduce.{}", base_name.to_string_lossy(), suffix);
-    parent.join(file_name)
-}
-
-fn ensure_parent_dir(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create parent directory for {}", path.display())
-            })?;
-        }
-    }
-    Ok(())
-}
-
 fn write_pretty_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let json = serde_json::to_string_pretty(value)
         .with_context(|| format!("failed to serialize JSON for {}", path.display()))?;
     fs::write(path, json).with_context(|| format!("failed to write JSON: {}", path.display()))?;
     Ok(())
-}
-
-fn normalize_display_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
-fn fingerprint_path(path: &Path) -> Result<String> {
-    if path.is_file() {
-        let bytes =
-            fs::read(path).with_context(|| format!("failed to read file: {}", path.display()))?;
-        let mut hasher = Fnv1a64::new();
-        hasher.update(normalize_display_path(path).as_bytes());
-        hasher.update(&[0]);
-        hasher.update(&bytes);
-        return Ok(hasher.finish_hex());
-    }
-
-    if path.is_dir() {
-        let mut files = Vec::new();
-        collect_files_recursive(path, path, &mut files)?;
-        files.sort_by(|a, b| a.0.cmp(&b.0));
-
-        let mut hasher = Fnv1a64::new();
-        hasher.update(normalize_display_path(path).as_bytes());
-        hasher.update(&[0xff]);
-
-        for (relative, absolute) in files {
-            let bytes = fs::read(&absolute)
-                .with_context(|| format!("failed to read file: {}", absolute.display()))?;
-            hasher.update(relative.as_bytes());
-            hasher.update(&[0]);
-            hasher.update(&(bytes.len() as u64).to_le_bytes());
-            hasher.update(&bytes);
-            hasher.update(&[0xfe]);
-        }
-
-        return Ok(hasher.finish_hex());
-    }
-
-    bail!(
-        "cannot fingerprint non-file non-directory path: {}",
-        path.display()
-    )
-}
-
-fn collect_files_recursive(
-    root: &Path,
-    current: &Path,
-    out: &mut Vec<(String, PathBuf)>,
-) -> Result<()> {
-    for entry in fs::read_dir(current)
-        .with_context(|| format!("failed to read dir: {}", current.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files_recursive(root, &path, out)?;
-        } else if path.is_file() {
-            let relative = path
-                .strip_prefix(root)
-                .with_context(|| format!("failed to relativize path: {}", path.display()))?;
-            out.push((normalize_display_path(relative), path));
-        }
-    }
-    Ok(())
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Fnv1a64 {
-    state: u64,
-}
-
-impl Fnv1a64 {
-    fn new() -> Self {
-        Self {
-            state: FNV1A64_OFFSET_BASIS,
-        }
-    }
-
-    fn update(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
-            self.state ^= u64::from(byte);
-            self.state = self.state.wrapping_mul(FNV1A64_PRIME);
-        }
-    }
-
-    fn finish_hex(self) -> String {
-        format!("{:016x}", self.state)
-    }
 }
 
 fn main() -> Result<()> {
@@ -930,44 +695,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        default_reproduce_output_path, parse_kelvin, parse_relativistic_fraction, ReproduceMode,
-    };
-    use std::path::Path;
-
-    #[test]
-    fn parses_relativistic_fraction() {
-        let beta = parse_relativistic_fraction("0.8c").expect("beta should parse");
-        assert!((beta - 0.8).abs() < 1e-12);
-    }
-
-    #[test]
-    fn parses_kelvin() {
-        let kelvin = parse_kelvin("77K").expect("kelvin should parse");
-        assert!((kelvin - 77.0).abs() < 1e-12);
-    }
-
-    #[test]
-    fn derives_default_reproduce_output_for_file() {
-        let path = Path::new("samples/example.py");
-        let out = default_reproduce_output_path(path, ReproduceMode::Analyze, "json");
-        assert_eq!(
-            out.to_string_lossy().replace('\\', "/"),
-            "samples/example.reproduce.json"
-        );
-    }
-
-    #[test]
-    fn derives_default_reproduce_output_for_directory() {
-        let path = Path::new("samples/corpus");
-        let out = default_reproduce_output_path(path, ReproduceMode::Batch, "manifest.json");
-        assert_eq!(
-            out.to_string_lossy().replace('\\', "/"),
-            "samples/corpus.reproduce.manifest.json"
-        );
-    }
 }
