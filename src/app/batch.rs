@@ -39,7 +39,11 @@ pub fn execute_batch(
                 .and_then(|s| s.to_str())
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            if ["py", "rs", "cpp", "cc", "cxx", "js", "mjs", "cjs"].contains(&ext.as_str()) {
+            if [
+                "py", "rs", "cpp", "cc", "cxx", "js", "mjs", "cjs", "ts", "tsx",
+            ]
+            .contains(&ext.as_str())
+            {
                 files.push(path);
             }
         }

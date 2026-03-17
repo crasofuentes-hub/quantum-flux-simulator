@@ -395,7 +395,7 @@ fn collect_benchmark_inputs(
                 .and_then(|s| s.to_str())
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            if ext == "py" {
+            if ["py", "ts", "tsx"].contains(&ext.as_str()) {
                 files.push(path);
             }
         }

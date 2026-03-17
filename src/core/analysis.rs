@@ -443,6 +443,8 @@ fn detect_language(path: &Path) -> String {
         "rs" => "rust".to_string(),
         "cpp" | "cc" | "cxx" | "hpp" | "h" => "cpp".to_string(),
         "js" | "mjs" | "cjs" => "javascript".to_string(),
+        "ts" => "typescript".to_string(),
+        "tsx" => "tsx".to_string(),
         _ => "unknown".to_string(),
     }
 }
