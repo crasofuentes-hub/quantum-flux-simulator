@@ -12,6 +12,34 @@ pub struct LindbladRates {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct EffectiveHamiltonianTrace {
+    pub estimated_cost: f64,
+    pub information_density: f64,
+    pub kind_factor: f64,
+    pub domain_factor: f64,
+    pub resulting_energy: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EffectiveCouplingTrace {
+    pub information_density: f64,
+    pub base_coupling: f64,
+    pub density_contribution: f64,
+    pub resulting_coupling: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EffectiveLindbladTrace {
+    pub quantum_noise: f64,
+    pub thermal_factor: f64,
+    pub relativistic_beta: f64,
+    pub logical_qubits: u32,
+    pub information_density: f64,
+    pub dephasing_gamma: f64,
+    pub amplitude_gamma: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct EffectivePhysicalBlock {
     pub name: String,
     pub kind: BlockKind,
@@ -25,6 +53,9 @@ pub struct EffectivePhysicalBlock {
     pub coherence_penalty: f64,
     pub density_state: Density2,
     pub density_entropy: f64,
+    pub hamiltonian_trace: EffectiveHamiltonianTrace,
+    pub coupling_trace: EffectiveCouplingTrace,
+    pub lindblad_trace: EffectiveLindbladTrace,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,7 +98,9 @@ pub fn build_effective_physical_model(
         let effective_hamiltonian_energy =
             block.estimated_cost * block.information_density * kind_factor * domain_factor;
 
-        let coupling_strength = 0.15 + block.information_density * 0.35;
+        let base_coupling = 0.15;
+        let density_contribution = block.information_density * 0.35;
+        let coupling_strength = base_coupling + density_contribution;
 
         let dephasing_gamma =
             quantum_noise * thermal_factor * (0.45 + block.information_density * 0.60);
@@ -75,6 +108,31 @@ pub fn build_effective_physical_model(
         let amplitude_gamma = quantum_noise
             * (1.0 + relativistic_beta)
             * (0.35 + (block.estimated_logical_qubits as f64 / 64.0));
+
+        let hamiltonian_trace = EffectiveHamiltonianTrace {
+            estimated_cost: block.estimated_cost,
+            information_density: block.information_density,
+            kind_factor,
+            domain_factor,
+            resulting_energy: effective_hamiltonian_energy,
+        };
+
+        let coupling_trace = EffectiveCouplingTrace {
+            information_density: block.information_density,
+            base_coupling,
+            density_contribution,
+            resulting_coupling: coupling_strength,
+        };
+
+        let lindblad_trace = EffectiveLindbladTrace {
+            quantum_noise,
+            thermal_factor,
+            relativistic_beta,
+            logical_qubits: block.estimated_logical_qubits,
+            information_density: block.information_density,
+            dephasing_gamma,
+            amplitude_gamma,
+        };
 
         let h = effective_hamiltonian_matrix(effective_hamiltonian_energy, coupling_strength);
         let l_phi = lindblad_dephasing(dephasing_gamma);
@@ -108,6 +166,9 @@ pub fn build_effective_physical_model(
             coherence_penalty,
             density_state: rho1.to_density2(),
             density_entropy,
+            hamiltonian_trace,
+            coupling_trace,
+            lindblad_trace,
         });
     }
 
