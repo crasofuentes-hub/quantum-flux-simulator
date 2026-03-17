@@ -402,7 +402,10 @@ fn collect_signals(text: &str, language: &str) -> AnalysisSignals {
         has_recursion: detect_recursion(text, language),
         crypto_hits: detect_keywords(
             text,
-            &["aes", "rsa", "ecc", "sha", "kyber", "lattice", "ed25519"],
+            &[
+                "aes", "rsa", "ecc", "sha", "sha256", "kyber", "lattice", "ed25519", "sign",
+                "verify", "hashlib", "crypto", "hmac",
+            ],
         ),
         numerical_hits: detect_keywords(
             text,
@@ -414,6 +417,12 @@ fn collect_signals(text: &str, language: &str) -> AnalysisSignals {
                 "integrate",
                 "jacobi",
                 "rk4",
+                "laplacian",
+                "gradient_descent",
+                "matrix",
+                "vector",
+                "solver",
+                "accumulate",
             ],
         ),
         ml_hits: detect_keywords(
@@ -426,6 +435,12 @@ fn collect_signals(text: &str, language: &str) -> AnalysisSignals {
                 "softmax",
                 "loss",
                 "tensor",
+                "train",
+                "weights",
+                "embedding",
+                "inference",
+                "logits",
+                "activation",
             ],
         ),
     }
