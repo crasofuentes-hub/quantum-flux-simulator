@@ -1,6 +1,8 @@
 use crate::core::analysis::FileAnalysis;
+use crate::core::benchmark::{AblationReport, BenchmarkReport};
 use crate::core::solver::BatchAggregateSummary;
 use anyhow::{Context, Result};
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
@@ -19,6 +21,21 @@ pub fn write_batch_json_report(path: &Path, payload: &BatchReport) -> Result<()>
     Ok(())
 }
 
+pub fn write_consolidated_json_report(
+    path: &Path,
+    payload: &ConsolidatedComparisonReport,
+) -> Result<()> {
+    let json = serde_json::to_string_pretty(payload)
+        .context("failed to serialize consolidated comparison JSON report")?;
+    fs::write(path, json).with_context(|| {
+        format!(
+            "failed to write consolidated comparison JSON report: {}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct BatchReport {
     pub report_schema_version: String,
@@ -26,6 +43,117 @@ pub struct BatchReport {
     pub seed: u64,
     pub aggregate: BatchAggregateSummary,
     pub files: Vec<FileAnalysis>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternalBaselineReference {
+    pub name: String,
+    pub integrated_automatically: bool,
+    pub asset_path: String,
+    pub doc_path: String,
+    pub status: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConsolidatedComparisonReport {
+    pub report_schema_version: String,
+    pub analysis_version: String,
+    pub seed: u64,
+    pub benchmark: BenchmarkReport,
+    pub ablation: AblationReport,
+    pub external_baseline: ExternalBaselineReference,
+}
+
+pub fn render_consolidated_markdown(report: &ConsolidatedComparisonReport) -> String {
+    let benchmark = &report.benchmark.aggregate;
+    let mut out = String::new();
+
+    out.push_str("# Consolidated comparison report\n\n");
+    out.push_str(&format!(
+        "- report_schema_version: {}\n",
+        report.report_schema_version
+    ));
+    out.push_str(&format!(
+        "- analysis_version: {}\n",
+        report.analysis_version
+    ));
+    out.push_str(&format!("- seed: {}\n\n", report.seed));
+
+    out.push_str("## Internal benchmark summary\n\n");
+    out.push_str("| metric | value |\n");
+    out.push_str("|---|---:|\n");
+    out.push_str(&format!(
+        "| files_analyzed | {} |\n",
+        benchmark.files_analyzed
+    ));
+    out.push_str(&format!(
+        "| class_accuracy | {:.6} |\n",
+        benchmark.class_accuracy
+    ));
+    out.push_str(&format!(
+        "| mean_baseline_risk | {:.6} |\n",
+        benchmark.mean_baseline_risk
+    ));
+    out.push_str(&format!(
+        "| mean_model_risk | {:.6} |\n",
+        benchmark.mean_model_risk
+    ));
+    out.push_str(&format!(
+        "| mean_baseline_stability | {:.6} |\n",
+        benchmark.mean_baseline_stability
+    ));
+    out.push_str(&format!(
+        "| mean_model_stability | {:.6} |\n",
+        benchmark.mean_model_stability
+    ));
+    out.push_str(&format!(
+        "| mean_collapse_probability | {:.6} |\n",
+        benchmark.mean_collapse_probability
+    ));
+
+    out.push_str("\n## Ablation summary\n\n");
+    out.push_str("| variant | files_analyzed | class_accuracy | mean_stability_score | mean_singularity_risk | mean_collapse_probability |\n");
+    out.push_str("|---|---:|---:|---:|---:|---:|\n");
+    for row in &report.ablation.aggregate {
+        out.push_str(&format!(
+            "| {} | {} | {:.6} | {:.6} | {:.6} | {:.6} |\n",
+            row.variant.as_str(),
+            row.files_analyzed,
+            row.class_accuracy,
+            row.mean_stability_score,
+            row.mean_singularity_risk,
+            row.mean_collapse_probability
+        ));
+    }
+
+    out.push_str("\n## External baseline status\n\n");
+    out.push_str("| field | value |\n");
+    out.push_str("|---|---|\n");
+    out.push_str(&format!("| name | {} |\n", report.external_baseline.name));
+    out.push_str(&format!(
+        "| integrated_automatically | {} |\n",
+        report.external_baseline.integrated_automatically
+    ));
+    out.push_str(&format!(
+        "| asset_path | {} |\n",
+        report.external_baseline.asset_path
+    ));
+    out.push_str(&format!(
+        "| doc_path | {} |\n",
+        report.external_baseline.doc_path
+    ));
+    out.push_str(&format!(
+        "| status | {} |\n",
+        report.external_baseline.status
+    ));
+    out.push_str(&format!("| notes | {} |\n", report.external_baseline.notes));
+
+    out.push_str("\n## Interpretation boundary\n\n");
+    out.push_str("This consolidated report joins the internal structural baseline, the current effective flux-sim model, and the automated internal ablation outputs.\n");
+    out.push_str("The external Radon baseline is currently tracked as an experiment reference and asset dependency, not as an automatically ingested Rust-native comparison result.\n");
+
+    out
 }
 
 pub fn print_text_summary(analysis: &FileAnalysis) {

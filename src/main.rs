@@ -7,7 +7,9 @@ use flux_sim::core::benchmark::{
     render_ablation_markdown, run_synthetic_ablation, run_synthetic_benchmark,
 };
 use flux_sim::core::reporting::{
-    print_text_summary, write_batch_json_report, write_json_report, BatchReport,
+    print_text_summary, render_consolidated_markdown, write_batch_json_report,
+    write_consolidated_json_report, write_json_report, BatchReport, ConsolidatedComparisonReport,
+    ExternalBaselineReference,
 };
 use flux_sim::core::solver::summarize_batch;
 use flux_sim::core::visualization::write_png_report;
@@ -124,6 +126,21 @@ enum Commands {
         #[arg(long, default_value_t = 42)]
         seed: u64,
     },
+    Consolidate {
+        input_dir: PathBuf,
+        #[arg(long, default_value_t = 0.01)]
+        quantum_noise: f64,
+        #[arg(long, default_value = "0.0c")]
+        relativistic: String,
+        #[arg(long, default_value = "300K")]
+        target_temp: String,
+        #[arg(long)]
+        json_out: PathBuf,
+        #[arg(long)]
+        markdown_out: PathBuf,
+        #[arg(long, default_value_t = 42)]
+        seed: u64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +178,16 @@ struct AblationRequest<'a> {
     seed: u64,
 }
 
+#[derive(Debug, Clone)]
+struct ConsolidateRequest<'a> {
+    input_dir: &'a Path,
+    quantum_noise: f64,
+    relativistic: &'a str,
+    target_temp: &'a str,
+    json_out: &'a Path,
+    markdown_out: &'a Path,
+    seed: u64,
+}
 #[derive(Debug, Clone, Copy)]
 enum ReproduceMode {
     Analyze,
@@ -407,6 +434,83 @@ fn execute_ablation(request: &AblationRequest<'_>) -> Result<()> {
     println!("flux-sim ablation OK");
     println!("files_analyzed={}", report.entries.len());
     println!("variants={}", report.aggregate.len());
+    println!("json_out={}", request.json_out.display());
+    println!("markdown_out={}", request.markdown_out.display());
+
+    Ok(())
+}
+
+fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
+    if !request.input_dir.exists() {
+        bail!("input_dir does not exist: {}", request.input_dir.display());
+    }
+    if !request.input_dir.is_dir() {
+        bail!(
+            "input_dir is not a directory: {}",
+            request.input_dir.display()
+        );
+    }
+
+    let beta = parse_relativistic_fraction(request.relativistic)?;
+    let kelvin = parse_kelvin(request.target_temp)?;
+
+    ensure_parent_dir(request.json_out)?;
+    ensure_parent_dir(request.markdown_out)?;
+
+    let benchmark = run_synthetic_benchmark(
+        request.input_dir,
+        request.quantum_noise,
+        beta,
+        kelvin,
+        request.seed,
+    )?;
+
+    let ablation = run_synthetic_ablation(
+        request.input_dir,
+        request.quantum_noise,
+        beta,
+        kelvin,
+        request.seed,
+    )?;
+
+    let external_baseline = ExternalBaselineReference {
+        name: "radon".to_string(),
+        integrated_automatically: false,
+        asset_path: "external_baselines/run-radon-benchmark.ps1".to_string(),
+        doc_path: "docs/experiments/EXTERNAL_BASELINE.md".to_string(),
+        status: "reference_only".to_string(),
+        notes: "External baseline assets exist, but automatic ingestion into the Rust comparison report is not implemented yet.".to_string(),
+    };
+
+    let report = ConsolidatedComparisonReport {
+        report_schema_version: REPORT_SCHEMA_VERSION.to_string(),
+        analysis_version: ANALYSIS_VERSION.to_string(),
+        seed: request.seed,
+        benchmark,
+        ablation,
+        external_baseline,
+    };
+
+    write_consolidated_json_report(request.json_out, &report)?;
+
+    let markdown = render_consolidated_markdown(&report);
+    fs::write(request.markdown_out, markdown).with_context(|| {
+        format!(
+            "failed to write consolidated markdown report: {}",
+            request.markdown_out.display()
+        )
+    })?;
+
+    println!("flux-sim consolidate OK");
+    println!(
+        "benchmark_files={}",
+        report.benchmark.aggregate.files_analyzed
+    );
+    println!("ablation_variants={}", report.ablation.aggregate.len());
+    println!(
+        "external_baseline_integrated={}",
+        report.external_baseline.integrated_automatically
+    );
     println!("json_out={}", request.json_out.display());
     println!("markdown_out={}", request.markdown_out.display());
 
@@ -765,6 +869,27 @@ fn main() -> Result<()> {
             };
             execute_ablation(&request)?;
         }
+        Commands::Consolidate {
+            input_dir,
+            quantum_noise,
+            relativistic,
+            target_temp,
+            json_out,
+            markdown_out,
+            seed,
+        } => {
+            let request = ConsolidateRequest {
+                input_dir: &input_dir,
+                quantum_noise,
+                relativistic: &relativistic,
+                target_temp: &target_temp,
+                json_out: &json_out,
+                markdown_out: &markdown_out,
+                seed,
+            };
+            execute_consolidate(&request)?;
+        }
+
         Commands::Reproduce {
             input_path,
             quantum_noise,
