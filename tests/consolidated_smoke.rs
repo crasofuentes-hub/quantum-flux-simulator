@@ -6,12 +6,17 @@ use std::path::Path;
 fn consolidate_writes_json_and_markdown_reports() {
     let json_out = Path::new("target/consolidated-report.json");
     let md_out = Path::new("target/consolidated-report.md");
+    let external_comparison = Path::new("target/comparison-report.json");
 
     if json_out.exists() {
         fs::remove_file(json_out).expect("old consolidated json should be removable");
     }
     if md_out.exists() {
         fs::remove_file(md_out).expect("old consolidated markdown should be removable");
+    }
+    if external_comparison.exists() {
+        fs::remove_file(external_comparison)
+            .expect("stale external comparison json should be removable");
     }
 
     let mut cmd = Command::cargo_bin("flux-sim").expect("binary should exist");
