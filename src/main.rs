@@ -7,9 +7,9 @@ use flux_sim::core::benchmark::{
     render_ablation_markdown, run_synthetic_ablation, run_synthetic_benchmark,
 };
 use flux_sim::core::reporting::{
-    print_text_summary, render_consolidated_markdown, write_batch_json_report,
-    write_consolidated_json_report, write_json_report, BatchReport, ConsolidatedComparisonReport,
-    ExternalBaselineReference,
+    print_text_summary, render_consolidated_markdown, try_read_external_comparison_json,
+    write_batch_json_report, write_consolidated_json_report, write_json_report, BatchReport,
+    ConsolidatedComparisonReport, ExternalBaselineReference,
 };
 use flux_sim::core::solver::summarize_batch;
 use flux_sim::core::visualization::write_png_report;
@@ -188,6 +188,7 @@ struct ConsolidateRequest<'a> {
     markdown_out: &'a Path,
     seed: u64,
 }
+
 #[derive(Debug, Clone, Copy)]
 enum ReproduceMode {
     Analyze,
@@ -473,13 +474,27 @@ fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
         request.seed,
     )?;
 
-    let external_baseline = ExternalBaselineReference {
-        name: "radon".to_string(),
-        integrated_automatically: false,
-        asset_path: "external_baselines/run-radon-benchmark.ps1".to_string(),
-        doc_path: "docs/experiments/EXTERNAL_BASELINE.md".to_string(),
-        status: "reference_only".to_string(),
-        notes: "External baseline assets exist, but automatic ingestion into the Rust comparison report is not implemented yet.".to_string(),
+    let external_comparison_path = Path::new("target/comparison-report.json");
+    let external_comparison_json = try_read_external_comparison_json(external_comparison_path)?;
+
+    let external_baseline = if external_comparison_json.is_some() {
+        ExternalBaselineReference {
+            name: "radon".to_string(),
+            integrated_automatically: true,
+            asset_path: "external_baselines/run-radon-benchmark.ps1".to_string(),
+            doc_path: "docs/experiments/EXTERNAL_BASELINE.md".to_string(),
+            status: "ingested_from_json".to_string(),
+            notes: "Rust did not execute Radon directly, but target/comparison-report.json was found and ingested into the consolidated report.".to_string(),
+        }
+    } else {
+        ExternalBaselineReference {
+            name: "radon".to_string(),
+            integrated_automatically: false,
+            asset_path: "external_baselines/run-radon-benchmark.ps1".to_string(),
+            doc_path: "docs/experiments/EXTERNAL_BASELINE.md".to_string(),
+            status: "reference_only".to_string(),
+            notes: "External baseline assets exist, but target/comparison-report.json was not found at consolidate time.".to_string(),
+        }
     };
 
     let report = ConsolidatedComparisonReport {
@@ -489,6 +504,7 @@ fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
         benchmark,
         ablation,
         external_baseline,
+        external_comparison_json,
     };
 
     write_consolidated_json_report(request.json_out, &report)?;
@@ -869,27 +885,6 @@ fn main() -> Result<()> {
             };
             execute_ablation(&request)?;
         }
-        Commands::Consolidate {
-            input_dir,
-            quantum_noise,
-            relativistic,
-            target_temp,
-            json_out,
-            markdown_out,
-            seed,
-        } => {
-            let request = ConsolidateRequest {
-                input_dir: &input_dir,
-                quantum_noise,
-                relativistic: &relativistic,
-                target_temp: &target_temp,
-                json_out: &json_out,
-                markdown_out: &markdown_out,
-                seed,
-            };
-            execute_consolidate(&request)?;
-        }
-
         Commands::Reproduce {
             input_path,
             quantum_noise,
@@ -911,6 +906,26 @@ fn main() -> Result<()> {
                 seed,
             };
             execute_reproduce(&request)?;
+        }
+        Commands::Consolidate {
+            input_dir,
+            quantum_noise,
+            relativistic,
+            target_temp,
+            json_out,
+            markdown_out,
+            seed,
+        } => {
+            let request = ConsolidateRequest {
+                input_dir: &input_dir,
+                quantum_noise,
+                relativistic: &relativistic,
+                target_temp: &target_temp,
+                json_out: &json_out,
+                markdown_out: &markdown_out,
+                seed,
+            };
+            execute_consolidate(&request)?;
         }
     }
 

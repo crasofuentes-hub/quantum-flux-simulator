@@ -3,6 +3,7 @@ use crate::core::benchmark::{AblationReport, BenchmarkReport};
 use crate::core::solver::BatchAggregateSummary;
 use anyhow::{Context, Result};
 use serde::Serialize;
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
@@ -56,6 +57,12 @@ pub struct ExternalBaselineReference {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ExternalComparisonSnapshot {
+    pub source_path: String,
+    pub payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ConsolidatedComparisonReport {
     pub report_schema_version: String,
     pub analysis_version: String,
@@ -63,6 +70,34 @@ pub struct ConsolidatedComparisonReport {
     pub benchmark: BenchmarkReport,
     pub ablation: AblationReport,
     pub external_baseline: ExternalBaselineReference,
+    pub external_comparison_json: Option<ExternalComparisonSnapshot>,
+}
+
+pub fn try_read_external_comparison_json(
+    path: &Path,
+) -> Result<Option<ExternalComparisonSnapshot>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let text = fs::read_to_string(path).with_context(|| {
+        format!(
+            "failed to read external comparison JSON: {}",
+            path.display()
+        )
+    })?;
+
+    let payload: Value = serde_json::from_str(&text).with_context(|| {
+        format!(
+            "failed to parse external comparison JSON: {}",
+            path.display()
+        )
+    })?;
+
+    Ok(Some(ExternalComparisonSnapshot {
+        source_path: path.to_string_lossy().replace('\\', "/"),
+        payload,
+    }))
 }
 
 pub fn render_consolidated_markdown(report: &ConsolidatedComparisonReport) -> String {
@@ -149,9 +184,20 @@ pub fn render_consolidated_markdown(report: &ConsolidatedComparisonReport) -> St
     ));
     out.push_str(&format!("| notes | {} |\n", report.external_baseline.notes));
 
+    out.push_str("\n## External comparison ingestion\n\n");
+    if let Some(snapshot) = &report.external_comparison_json {
+        out.push_str(&format!(
+            "- external comparison JSON loaded from: {}\n",
+            snapshot.source_path
+        ));
+    } else {
+        out.push_str("- external comparison JSON not loaded\n");
+    }
+
     out.push_str("\n## Interpretation boundary\n\n");
     out.push_str("This consolidated report joins the internal structural baseline, the current effective flux-sim model, and the automated internal ablation outputs.\n");
-    out.push_str("The external Radon baseline is currently tracked as an experiment reference and asset dependency, not as an automatically ingested Rust-native comparison result.\n");
+    out.push_str("When available, it also embeds the externally generated comparison-report.json produced by the Radon baseline bootstrap script.\n");
+    out.push_str("Rust still does not execute Radon directly; it only ingests the external comparison artifact when present.\n");
 
     out
 }
