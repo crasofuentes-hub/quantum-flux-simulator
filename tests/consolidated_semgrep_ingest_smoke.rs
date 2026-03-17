@@ -3,37 +3,33 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn consolidate_ingests_external_comparison_json_when_present() {
+fn consolidate_ingests_semgrep_summary_json_when_present() {
     let target_dir = Path::new("target");
     if !target_dir.exists() {
         fs::create_dir_all(target_dir).expect("target dir should be creatable");
     }
 
-    let comparison_path = target_dir.join("comparison-report.json");
-    let json_out = target_dir.join("consolidated-with-external.json");
-    let md_out = target_dir.join("consolidated-with-external.md");
+    let semgrep_path = target_dir.join("semgrep-summary.json");
+    let json_out = target_dir.join("consolidated-with-semgrep.json");
+    let md_out = target_dir.join("consolidated-with-semgrep.md");
 
     fs::write(
-        &comparison_path,
+        &semgrep_path,
         r#"{
-  "benchmark_source": "synthetic_dataset_v0",
-  "seed": 42,
-  "aggregate": {
-    "files_analyzed": 4,
-    "class_accuracy": 1.0,
-    "mean_flux_stability": 75.0
-  },
-  "entries": [
-    {
-      "path": "benchmarks\\dataset\\crypto_heavy.py",
-      "expected_class": "crypto",
-      "detected_class": "crypto",
-      "class_match": true
+  "dataset": "seeded_defects_v1",
+  "tool": "semgrep",
+  "total_findings": 3,
+  "files_scanned": 2,
+  "files": {
+    "datasets/seeded_defects/crypto_seeded_defect.py": {
+      "findings": 2,
+      "checks": ["rule.a", "rule.b"],
+      "severities": ["WARNING", "ERROR"]
     }
-  ]
+  }
 }"#,
     )
-    .expect("comparison-report.json should be writable");
+    .expect("semgrep-summary.json should be writable");
 
     if json_out.exists() {
         fs::remove_file(&json_out).expect("old consolidated json should be removable");
@@ -54,9 +50,9 @@ fn consolidate_ingests_external_comparison_json_when_present() {
             "--target-temp",
             "77K",
             "--json-out",
-            "target/consolidated-with-external.json",
+            "target/consolidated-with-semgrep.json",
             "--markdown-out",
-            "target/consolidated-with-external.md",
+            "target/consolidated-with-semgrep.md",
             "--seed",
             "42",
         ])
@@ -64,16 +60,15 @@ fn consolidate_ingests_external_comparison_json_when_present() {
         .success();
 
     let consolidated = fs::read_to_string(&json_out).expect("consolidated json should be readable");
-    assert!(consolidated.contains("\"external_comparison_json\""));
-    assert!(consolidated.contains("\"ingested_from_json\""));
+    assert!(consolidated.contains("\"semgrep_summary_json\""));
+    assert!(consolidated.contains("\"tool\": \"semgrep\""));
     assert!(consolidated.contains("\"integrated_automatically\": true"));
-    assert!(consolidated.contains("\"benchmark_source\": \"synthetic_dataset_v0\""));
 
     let markdown = fs::read_to_string(&md_out).expect("consolidated markdown should be readable");
-    assert!(markdown.contains("Radon comparison JSON loaded from"));
+    assert!(markdown.contains("Semgrep summary JSON loaded from"));
 
-    if comparison_path.exists() {
-        fs::remove_file(&comparison_path)
-            .expect("comparison-report.json should be removable after test");
+    if semgrep_path.exists() {
+        fs::remove_file(&semgrep_path)
+            .expect("semgrep-summary.json should be removable after test");
     }
 }

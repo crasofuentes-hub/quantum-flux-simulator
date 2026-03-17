@@ -63,6 +63,12 @@ pub struct ExternalComparisonSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct SemgrepSummarySnapshot {
+    pub source_path: String,
+    pub payload: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct ConsolidatedComparisonReport {
     pub report_schema_version: String,
     pub analysis_version: String,
@@ -71,6 +77,7 @@ pub struct ConsolidatedComparisonReport {
     pub ablation: AblationReport,
     pub external_baseline: ExternalBaselineReference,
     pub external_comparison_json: Option<ExternalComparisonSnapshot>,
+    pub semgrep_summary_json: Option<SemgrepSummarySnapshot>,
 }
 
 pub fn try_read_external_comparison_json(
@@ -95,6 +102,23 @@ pub fn try_read_external_comparison_json(
     })?;
 
     Ok(Some(ExternalComparisonSnapshot {
+        source_path: path.to_string_lossy().replace('\\', "/"),
+        payload,
+    }))
+}
+
+pub fn try_read_semgrep_summary_json(path: &Path) -> Result<Option<SemgrepSummarySnapshot>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("failed to read Semgrep summary JSON: {}", path.display()))?;
+
+    let payload: Value = serde_json::from_str(&text)
+        .with_context(|| format!("failed to parse Semgrep summary JSON: {}", path.display()))?;
+
+    Ok(Some(SemgrepSummarySnapshot {
         source_path: path.to_string_lossy().replace('\\', "/"),
         payload,
     }))
@@ -184,20 +208,30 @@ pub fn render_consolidated_markdown(report: &ConsolidatedComparisonReport) -> St
     ));
     out.push_str(&format!("| notes | {} |\n", report.external_baseline.notes));
 
-    out.push_str("\n## External comparison ingestion\n\n");
+    out.push_str("\n## Radon comparison ingestion\n\n");
     if let Some(snapshot) = &report.external_comparison_json {
         out.push_str(&format!(
-            "- external comparison JSON loaded from: {}\n",
+            "- Radon comparison JSON loaded from: {}\n",
             snapshot.source_path
         ));
     } else {
-        out.push_str("- external comparison JSON not loaded\n");
+        out.push_str("- Radon comparison JSON not loaded\n");
+    }
+
+    out.push_str("\n## Semgrep summary ingestion\n\n");
+    if let Some(snapshot) = &report.semgrep_summary_json {
+        out.push_str(&format!(
+            "- Semgrep summary JSON loaded from: {}\n",
+            snapshot.source_path
+        ));
+    } else {
+        out.push_str("- Semgrep summary JSON not loaded\n");
     }
 
     out.push_str("\n## Interpretation boundary\n\n");
     out.push_str("This consolidated report joins the internal structural baseline, the current effective flux-sim model, and the automated internal ablation outputs.\n");
-    out.push_str("When available, it also embeds the externally generated comparison-report.json produced by the Radon baseline bootstrap script.\n");
-    out.push_str("Rust still does not execute Radon directly; it only ingests the external comparison artifact when present.\n");
+    out.push_str("When available, it also embeds externally generated comparison artifacts such as Radon comparison JSON and Semgrep summary JSON.\n");
+    out.push_str("Rust still does not execute those external tools directly; it only ingests their artifacts when present.\n");
 
     out
 }

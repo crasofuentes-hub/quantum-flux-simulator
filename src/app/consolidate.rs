@@ -2,7 +2,7 @@ use crate::app::requests::ConsolidateRequest;
 use crate::core::analysis::{ANALYSIS_VERSION, REPORT_SCHEMA_VERSION};
 use crate::core::benchmark::{run_synthetic_ablation, run_synthetic_benchmark};
 use crate::core::reporting::{
-    render_consolidated_markdown, try_read_external_comparison_json,
+    render_consolidated_markdown, try_read_external_comparison_json, try_read_semgrep_summary_json,
     write_consolidated_json_report, ConsolidatedComparisonReport, ExternalBaselineReference,
 };
 use crate::util::experiment_manifest::{
@@ -51,23 +51,27 @@ pub fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
     let external_comparison_path = Path::new("target/comparison-report.json");
     let external_comparison_json = try_read_external_comparison_json(external_comparison_path)?;
 
-    let external_baseline = if external_comparison_json.is_some() {
+    let semgrep_summary_path = Path::new("target/semgrep-summary.json");
+    let semgrep_summary_json = try_read_semgrep_summary_json(semgrep_summary_path)?;
+
+    let external_baseline = if external_comparison_json.is_some() || semgrep_summary_json.is_some()
+    {
         ExternalBaselineReference {
-            name: "radon".to_string(),
+            name: "radon+semgrep".to_string(),
             integrated_automatically: true,
-            asset_path: "external_baselines/run-radon-benchmark.ps1".to_string(),
-            doc_path: "docs/experiments/EXTERNAL_BASELINE.md".to_string(),
+            asset_path: "external_baselines/run-radon-benchmark.ps1; external_baselines/run-semgrep-benchmark.ps1".to_string(),
+            doc_path: "docs/experiments/EXTERNAL_BASELINE.md; docs/experiments/SEMGREP_BASELINE.md".to_string(),
             status: "ingested_from_json".to_string(),
-            notes: "Rust did not execute Radon directly, but target/comparison-report.json was found and ingested into the consolidated report.".to_string(),
+            notes: "Rust did not execute external tools directly, but one or more external comparison artifacts were found and ingested into the consolidated report.".to_string(),
         }
     } else {
         ExternalBaselineReference {
-            name: "radon".to_string(),
+            name: "radon+semgrep".to_string(),
             integrated_automatically: false,
-            asset_path: "external_baselines/run-radon-benchmark.ps1".to_string(),
-            doc_path: "docs/experiments/EXTERNAL_BASELINE.md".to_string(),
+            asset_path: "external_baselines/run-radon-benchmark.ps1; external_baselines/run-semgrep-benchmark.ps1".to_string(),
+            doc_path: "docs/experiments/EXTERNAL_BASELINE.md; docs/experiments/SEMGREP_BASELINE.md".to_string(),
             status: "reference_only".to_string(),
-            notes: "External baseline assets exist, but target/comparison-report.json was not found at consolidate time.".to_string(),
+            notes: "External baseline assets exist, but no Radon or Semgrep artifact was found at consolidate time.".to_string(),
         }
     };
 
@@ -79,6 +83,7 @@ pub fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
         ablation,
         external_baseline,
         external_comparison_json: external_comparison_json.clone(),
+        semgrep_summary_json: semgrep_summary_json.clone(),
     };
 
     write_consolidated_json_report(request.json_out, &report)?;
@@ -104,7 +109,9 @@ pub fn execute_consolidate(request: &ConsolidateRequest<'_>) -> Result<()> {
             request.markdown_out.to_string_lossy().replace('\\', "/"),
             manifest_path.to_string_lossy().replace('\\', "/"),
         ],
-        external_comparison_ingested: Some(external_comparison_json.is_some()),
+        external_comparison_ingested: Some(
+            external_comparison_json.is_some() || semgrep_summary_json.is_some(),
+        ),
     })?;
     write_experiment_manifest(&manifest_path, &manifest)?;
 
