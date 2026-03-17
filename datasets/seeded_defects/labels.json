@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "dataset_id": "seeded_defects_v1",
+  "description": "Small internal dataset with seeded defects for reproducible signal checking.",
+  "cases": [
+    {
+      "file": "crypto_seeded_defect.py",
+      "expected_class": "crypto",
+      "defect_family": "logic_masking",
+      "hypothesis": "Flux should classify this as crypto-oriented and expose non-trivial pressure from looped verification flow."
+    },
+    {
+      "file": "numerical_seeded_defect.py",
+      "expected_class": "numerical",
+      "defect_family": "aggregation_bias",
+      "hypothesis": "Flux should classify this as numerical and differentiate it from crypto and ML cases."
+    },
+    {
+      "file": "ml_seeded_defect.py",
+      "expected_class": "ml",
+      "defect_family": "stale_update",
+      "hypothesis": "Flux should classify this as ML-oriented through gradient/loss/softmax style vocabulary."
+    },
+    {
+      "file": "general_seeded_defect.py",
+      "expected_class": "general",
+      "defect_family": "empty_case_misreport",
+      "hypothesis": "Flux should keep this in the general class while still detecting control/aggregation structure."
+    }
+  ]
+}
