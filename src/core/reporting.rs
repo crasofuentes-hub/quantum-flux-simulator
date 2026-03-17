@@ -4,6 +4,7 @@ use crate::core::solver::BatchAggregateSummary;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -124,6 +125,131 @@ pub fn try_read_semgrep_summary_json(path: &Path) -> Result<Option<SemgrepSummar
     }))
 }
 
+fn normalize_lookup_path(path: &str) -> String {
+    path.replace('\\', "/").trim_start_matches("./").to_string()
+}
+
+fn extract_semgrep_findings_by_file(
+    report: &ConsolidatedComparisonReport,
+) -> BTreeMap<String, u64> {
+    let mut out = BTreeMap::new();
+
+    let Some(snapshot) = &report.semgrep_summary_json else {
+        return out;
+    };
+
+    let Some(files) = snapshot.payload.get("files").and_then(|v| v.as_object()) else {
+        return out;
+    };
+
+    for (path, payload) in files {
+        let findings = payload
+            .get("findings")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        out.insert(normalize_lookup_path(path), findings);
+    }
+
+    out
+}
+
+fn render_radon_summary(report: &ConsolidatedComparisonReport) -> String {
+    let Some(snapshot) = &report.external_comparison_json else {
+        return "- Radon comparison JSON not loaded\n".to_string();
+    };
+
+    let aggregate = snapshot.payload.get("aggregate");
+    let files_analyzed = aggregate
+        .and_then(|a| a.get("files_analyzed"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let class_accuracy = aggregate
+        .and_then(|a| a.get("class_accuracy"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let mean_radon_max_cc = aggregate
+        .and_then(|a| a.get("mean_radon_max_cc"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let mean_radon_mi_score = aggregate
+        .and_then(|a| a.get("mean_radon_mi_score"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "- Radon comparison JSON loaded from: {}\n\n",
+        snapshot.source_path
+    ));
+    out.push_str("| metric | value |\n");
+    out.push_str("|---|---:|\n");
+    out.push_str(&format!("| files_analyzed | {} |\n", files_analyzed));
+    out.push_str(&format!("| class_accuracy | {:.6} |\n", class_accuracy));
+    out.push_str(&format!(
+        "| mean_radon_max_cc | {:.6} |\n",
+        mean_radon_max_cc
+    ));
+    out.push_str(&format!(
+        "| mean_radon_mi_score | {:.6} |\n",
+        mean_radon_mi_score
+    ));
+    out
+}
+
+fn render_semgrep_summary(report: &ConsolidatedComparisonReport) -> String {
+    let Some(snapshot) = &report.semgrep_summary_json else {
+        return "- Semgrep summary JSON not loaded\n".to_string();
+    };
+
+    let total_findings = snapshot
+        .payload
+        .get("total_findings")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let files_scanned = snapshot
+        .payload
+        .get("files_scanned")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "- Semgrep summary JSON loaded from: {}\n\n",
+        snapshot.source_path
+    ));
+    out.push_str("| metric | value |\n");
+    out.push_str("|---|---:|\n");
+    out.push_str(&format!("| total_findings | {} |\n", total_findings));
+    out.push_str(&format!("| files_scanned | {} |\n", files_scanned));
+    out
+}
+
+fn render_cross_file_table(report: &ConsolidatedComparisonReport) -> String {
+    let semgrep_by_file = extract_semgrep_findings_by_file(report);
+
+    let mut out = String::new();
+    out.push_str("| file | expected_class | detected_class | class_match | flux_stability | flux_risk | semgrep_findings |\n");
+    out.push_str("|---|---|---|---:|---:|---:|---:|\n");
+
+    for entry in &report.benchmark.entries {
+        let normalized_path = normalize_lookup_path(&entry.path);
+        let findings = semgrep_by_file.get(&normalized_path).copied().unwrap_or(0);
+
+        out.push_str(&format!(
+            "| {} | {} | {} | {} | {:.6} | {:.6} | {} |\n",
+            normalize_lookup_path(&entry.path),
+            entry.expected_class,
+            entry.detected_class,
+            if entry.class_match { "yes" } else { "no" },
+            entry.stability_score,
+            entry.singularity_risk,
+            findings
+        ));
+    }
+
+    out
+}
+
 pub fn render_consolidated_markdown(report: &ConsolidatedComparisonReport) -> String {
     let benchmark = &report.benchmark.aggregate;
     let mut out = String::new();
@@ -209,24 +335,13 @@ pub fn render_consolidated_markdown(report: &ConsolidatedComparisonReport) -> St
     out.push_str(&format!("| notes | {} |\n", report.external_baseline.notes));
 
     out.push_str("\n## Radon comparison ingestion\n\n");
-    if let Some(snapshot) = &report.external_comparison_json {
-        out.push_str(&format!(
-            "- Radon comparison JSON loaded from: {}\n",
-            snapshot.source_path
-        ));
-    } else {
-        out.push_str("- Radon comparison JSON not loaded\n");
-    }
+    out.push_str(&render_radon_summary(report));
 
     out.push_str("\n## Semgrep summary ingestion\n\n");
-    if let Some(snapshot) = &report.semgrep_summary_json {
-        out.push_str(&format!(
-            "- Semgrep summary JSON loaded from: {}\n",
-            snapshot.source_path
-        ));
-    } else {
-        out.push_str("- Semgrep summary JSON not loaded\n");
-    }
+    out.push_str(&render_semgrep_summary(report));
+
+    out.push_str("\n## Cross-file comparison\n\n");
+    out.push_str(&render_cross_file_table(report));
 
     out.push_str("\n## Interpretation boundary\n\n");
     out.push_str("This consolidated report joins the internal structural baseline, the current effective flux-sim model, and the automated internal ablation outputs.\n");

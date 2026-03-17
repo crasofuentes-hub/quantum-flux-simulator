@@ -21,7 +21,7 @@ fn consolidate_ingests_semgrep_summary_json_when_present() {
   "total_findings": 3,
   "files_scanned": 2,
   "files": {
-    "datasets/seeded_defects/crypto_seeded_defect.py": {
+    "benchmarks/dataset/crypto_heavy.py": {
       "findings": 2,
       "checks": ["rule.a", "rule.b"],
       "severities": ["WARNING", "ERROR"]
@@ -66,6 +66,10 @@ fn consolidate_ingests_semgrep_summary_json_when_present() {
 
     let markdown = fs::read_to_string(&md_out).expect("consolidated markdown should be readable");
     assert!(markdown.contains("Semgrep summary JSON loaded from"));
+    assert!(markdown.contains("| total_findings | 3 |"));
+    assert!(markdown.contains("| files_scanned | 2 |"));
+    assert!(markdown.contains("| benchmarks/dataset/crypto_heavy.py | crypto | crypto | yes |"));
+    assert!(markdown.contains("| 2 |"));
 
     if semgrep_path.exists() {
         fs::remove_file(&semgrep_path)

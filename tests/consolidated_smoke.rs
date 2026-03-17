@@ -8,6 +8,7 @@ fn consolidate_writes_json_and_markdown_reports() {
     let md_out = Path::new("target/consolidated-report.md");
     let manifest_out = Path::new("target/consolidated-report.manifest.json");
     let external_comparison = Path::new("target/comparison-report.json");
+    let semgrep_summary = Path::new("target/semgrep-summary.json");
 
     if json_out.exists() {
         fs::remove_file(json_out).expect("old consolidated json should be removable");
@@ -21,6 +22,9 @@ fn consolidate_writes_json_and_markdown_reports() {
     if external_comparison.exists() {
         fs::remove_file(external_comparison)
             .expect("stale external comparison json should be removable");
+    }
+    if semgrep_summary.exists() {
+        fs::remove_file(semgrep_summary).expect("stale semgrep summary json should be removable");
     }
 
     let mut cmd = Command::cargo_bin("flux-sim").expect("binary should exist");
@@ -57,6 +61,9 @@ fn consolidate_writes_json_and_markdown_reports() {
     assert!(md_text.contains("## Internal benchmark summary"));
     assert!(md_text.contains("## Ablation summary"));
     assert!(md_text.contains("## External baseline status"));
+    assert!(md_text.contains("## Cross-file comparison"));
+    assert!(md_text.contains("| file | expected_class | detected_class |"));
+    assert!(md_text.contains("crypto_heavy.py"));
 
     let manifest_text =
         fs::read_to_string(manifest_out).expect("consolidated manifest should be readable");

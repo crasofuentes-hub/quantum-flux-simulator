@@ -21,11 +21,13 @@ fn consolidate_ingests_external_comparison_json_when_present() {
   "aggregate": {
     "files_analyzed": 4,
     "class_accuracy": 1.0,
-    "mean_flux_stability": 75.0
+    "mean_flux_stability": 75.0,
+    "mean_radon_max_cc": 3.5,
+    "mean_radon_mi_score": 84.0
   },
   "entries": [
     {
-      "path": "benchmarks\\dataset\\crypto_heavy.py",
+      "path": "benchmarks/dataset/crypto_heavy.py",
       "expected_class": "crypto",
       "detected_class": "crypto",
       "class_match": true
@@ -71,6 +73,7 @@ fn consolidate_ingests_external_comparison_json_when_present() {
 
     let markdown = fs::read_to_string(&md_out).expect("consolidated markdown should be readable");
     assert!(markdown.contains("Radon comparison JSON loaded from"));
+    assert!(markdown.contains("| mean_radon_max_cc | 3.500000 |"));
 
     if comparison_path.exists() {
         fs::remove_file(&comparison_path)
