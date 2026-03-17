@@ -5,3 +5,7 @@ Cargo.lock
 *.png
 *.json.venv-radon/
 .venv-radon/
+
+# Reproduce artifacts
+*.reproduce.json
+*.reproduce.manifest.json
