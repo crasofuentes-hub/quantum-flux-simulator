@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "dataset_id": "seeded_defects_v1",
   "description": "Small internal dataset with seeded defects for reproducible signal checking.",
   "cases": [
@@ -7,25 +7,33 @@
       "file": "crypto_seeded_defect.py",
       "expected_class": "crypto",
       "defect_family": "logic_masking",
-      "hypothesis": "Flux should classify this as crypto-oriented and expose non-trivial pressure from looped verification flow."
+      "expected_severity": "medium",
+      "hypothesis": "Flux should classify this as crypto-oriented and expose non-trivial pressure from looped verification flow.",
+      "rationale": "The file combines cryptographic vocabulary, verification loops, and a seeded masking defect that can hide per-record failures behind aggregate success."
     },
     {
       "file": "numerical_seeded_defect.py",
       "expected_class": "numerical",
       "defect_family": "aggregation_bias",
-      "hypothesis": "Flux should classify this as numerical and differentiate it from crypto and ML cases."
+      "expected_severity": "medium",
+      "hypothesis": "Flux should classify this as numerical and differentiate it from crypto and ML cases.",
+      "rationale": "The file contains iterative accumulation and a seeded denominator bias defect that distorts averaged output while preserving a superficially coherent structure."
     },
     {
       "file": "ml_seeded_defect.py",
       "expected_class": "ml",
       "defect_family": "stale_update",
-      "hypothesis": "Flux should classify this as ML-oriented through gradient/loss/softmax style vocabulary."
+      "expected_severity": "medium",
+      "hypothesis": "Flux should classify this as ML-oriented through gradient, loss, optimizer-like, and softmax-style vocabulary.",
+      "rationale": "The file simulates a lightweight training step where gradient-like signals are present but the seeded defect prevents actual parameter update."
     },
     {
       "file": "general_seeded_defect.py",
       "expected_class": "general",
       "defect_family": "empty_case_misreport",
-      "hypothesis": "Flux should keep this in the general class while still detecting control/aggregation structure."
+      "expected_severity": "low",
+      "hypothesis": "Flux should keep this in the general class while still detecting control and aggregation structure.",
+      "rationale": "The file is intentionally non-specialized and contains a seeded empty-input reporting defect rather than a domain-specific algorithmic issue."
     }
   ]
 }
