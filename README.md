@@ -4,7 +4,9 @@
 
 # quantum-flux-simulator
 
-**flux-sim** is a reproducible, physics-inspired research CLI for code analysis using an explicit effective state model, internal benchmark workflows, and optional ingestion of external comparison artifacts.
+**flux-sim** is a physics-inspired research CLI for reproducible code analysis and benchmark-driven comparison workflows.
+
+It analyzes source-code structure, builds an explicit effective state model, and emits reproducible reports for internal comparison, experimentation, and tool-to-tool benchmarking.
 
 ## Status
 
@@ -23,11 +25,11 @@ This project should **not** currently be described as:
 
 ## What it does
 
-`flux-sim` analyzes source-code structure and maps it into a deliberately simplified effective model that combines:
+`flux-sim` combines:
 
-- structural signal extraction
+- structural source analysis
 - classification into `crypto`, `numerical`, `ml`, `general`
-- intermediate critical-block modeling
+- intermediate modeling with critical blocks, hotspots, and information channels
 - effective 2x2 density-state evolution
 - Lindblad-like dissipative terms
 - effective relativistic gamma-like scaling
@@ -48,38 +50,35 @@ This project should **not** currently be described as:
 - optional ingestion of Radon and Semgrep artifacts
 - JSON output for downstream tooling
 - PNG output for quick inspection
-- practical support for Python, Rust, JavaScript, TypeScript, and TSX file handling
+- practical handling of Python, Rust, JavaScript, TypeScript, and TSX files
 
 ## Installation
 
 ### Build locally
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
+~~~bash
 cargo build
 ~~~
 
 ### Run without installing
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
-cargo run -- analyze examples\my_crypto.py --json-out target\analysis.json --seed 42
+~~~bash
+cargo run -- analyze examples/my_crypto.py --json-out target/analysis.json --seed 42
 ~~~
 
 ### Install from local source
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
+~~~bash
 cargo install --path .
 ~~~
 
-### Future crates.io installation
+### crates.io status
 
-This project is **not yet published** on crates.io.
+`flux-sim` is **not yet published** on crates.io.
 
-When it is published, installation should look like:
+When published, installation should look like:
 
-~~~powershell
+~~~bash
 cargo install flux-sim
 ~~~
 
@@ -87,37 +86,32 @@ cargo install flux-sim
 
 ### Analyze a single file
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
-.\target\debug\flux-sim.exe analyze .\examples\my_crypto.py --json-out .\target\analysis.json --seed 42
+~~~bash
+cargo run -- analyze examples/my_crypto.py --json-out target/analysis.json --seed 42
 ~~~
 
 ### Reproduce a single-file run with manifest
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
-.\target\debug\flux-sim.exe reproduce .\examples\my_crypto.py --seed 42
+~~~bash
+cargo run -- reproduce examples/my_crypto.py --seed 42
 ~~~
 
 ### Benchmark a dataset
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
-.\target\debug\flux-sim.exe benchmark .\datasets\seeded_defects --quantum-noise 0.01 --relativistic 0.2c --target-temp 77K --json-out .\target\seeded-benchmark.json --seed 42
+~~~bash
+cargo run -- benchmark datasets/seeded_defects --quantum-noise 0.01 --relativistic 0.2c --target-temp 77K --json-out target/seeded-benchmark.json --seed 42
 ~~~
 
 ### Run ablation comparison
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
-.\target\debug\flux-sim.exe ablation .\benchmarks\dataset --quantum-noise 0.01 --relativistic 0.2c --target-temp 77K --json-out .\target\ablation-report.json --markdown-out .\target\ablation-report.md --seed 42
+~~~bash
+cargo run -- ablation benchmarks/dataset --quantum-noise 0.01 --relativistic 0.2c --target-temp 77K --json-out target/ablation-report.json --markdown-out target/ablation-report.md --seed 42
 ~~~
 
-### Build consolidated comparison report
+### Build a consolidated comparison report
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
-.\target\debug\flux-sim.exe consolidate .\benchmarks\dataset --quantum-noise 0.01 --relativistic 0.2c --target-temp 77K --json-out .\target\consolidated-report.json --markdown-out .\target\consolidated-report.md --seed 42
+~~~bash
+cargo run -- consolidate benchmarks/dataset --quantum-noise 0.01 --relativistic 0.2c --target-temp 77K --json-out target/consolidated-report.json --markdown-out target/consolidated-report.md --seed 42
 ~~~
 
 ## Commands
@@ -126,10 +120,10 @@ Set-Location "C:\repos\quantum-flux-simulator"
 |---|---|
 | `analyze` | Analyze one source file and optionally emit JSON / PNG |
 | `profile` | Analyze one file and print a summary with optional PNG |
-| `batch` | Analyze all supported files in a directory |
+| `batch` | Analyze supported files in a directory |
 | `benchmark` | Run the internal benchmark workflow on a dataset |
 | `ablation` | Compare full model and ablated variants |
-| `reproduce` | Generate a reproducible report + manifest from a file or directory |
+| `reproduce` | Generate a reproducible report and manifest from a file or directory |
 | `consolidate` | Build a report joining benchmark, ablation, and optional external artifacts |
 
 ## Main flags
@@ -141,56 +135,125 @@ Set-Location "C:\repos\quantum-flux-simulator"
 | `--target-temp` | Effective target temperature, formatted like `77K` |
 | `--json-out` | Output path for JSON report |
 | `--markdown-out` | Output path for Markdown report |
-| `--plot` | PNG output path for analyze/profile |
+| `--plot` | PNG output path for `analyze` / `profile` |
 | `--seed` | Reproducibility seed |
 | `--algorithm-class` | Optional class override: `crypto`, `numerical`, `ml`, `general` |
+
+## Command-specific usage
+
+### `analyze`
+
+Analyze a single file and optionally emit JSON and PNG.
+
+~~~bash
+cargo run -- analyze <source_path> [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--json-out <path>] [--plot <path>] [--algorithm-class <class>] [--seed <u64>]
+~~~
+
+### `profile`
+
+Analyze a single file and print a summary, with optional PNG.
+
+~~~bash
+cargo run -- profile <source_path> [--algorithm-class <class>] [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--plot <path>] [--seed <u64>]
+~~~
+
+### `batch`
+
+Analyze supported files in a directory.
+
+~~~bash
+cargo run -- batch <input_dir> --json-out <path> [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--algorithm-class <class>] [--seed <u64>]
+~~~
+
+### `benchmark`
+
+Run the internal benchmark workflow on a dataset.
+
+~~~bash
+cargo run -- benchmark <input_dir> --json-out <path> [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--seed <u64>]
+~~~
+
+### `ablation`
+
+Run ablation comparison and emit JSON + Markdown.
+
+~~~bash
+cargo run -- ablation <input_dir> --json-out <path> --markdown-out <path> [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--seed <u64>]
+~~~
+
+### `reproduce`
+
+Generate a reproducible report and manifest from a file or directory.
+
+~~~bash
+cargo run -- reproduce <input_path> [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--json-out <path>] [--manifest-out <path>] [--algorithm-class <class>] [--seed <u64>]
+~~~
+
+### `consolidate`
+
+Build a consolidated comparison report.
+
+~~~bash
+cargo run -- consolidate <input_dir> --json-out <path> --markdown-out <path> [--quantum-noise <f64>] [--relativistic <beta>] [--target-temp <kelvin>] [--seed <u64>]
+~~~
 
 ## How to interpret the metrics
 
 These outputs are **physics-inspired code-analysis signals**, not measured physical quantities.
 
 ### `stability_score`
-A higher value indicates a more stable profile under the current effective model and solver summary.
+
+Higher means the analyzed workload looks more stable under the current effective model and solver summary.
 
 ### `singularity_risk`
-A normalized risk-like score in `[0, 1]`. Higher means the current model detects more concentrated structural / solver stress.
+
+A normalized risk-like score in `[0, 1]`. Higher means the current model detects more concentrated structural and solver stress.
 
 ### `collapse_probability`
-Monte Carlo-style fraction of simulated samples exceeding an internal collapse threshold.
+
+A Monte Carlo-style fraction of simulated samples exceeding an internal collapse threshold.
 
 ### `decoherence_rate`
+
 Effective dissipation pressure derived from the block-level model. This is a model quantity, not physical decoherence from a real system.
 
 ### `von_neumann_entropy`
+
 Entropy of the effective 2x2 density-like state after model evolution and stabilization.
 
 ### `global_constraint_penalty`
+
 A scalar regularization term derived from energy, coherence penalties, and decoherence rate. It is **not** a Wheeler-DeWitt solution.
 
 ## Datasets and benchmark layers
 
 ### Synthetic benchmark
+
 - `benchmarks/dataset/`
 
 ### Semi-real corpus
+
 - `benchmarks/semi_real/`
 - `benchmarks/semi_real/labels.json`
 
 ### Seeded defects
+
 - `datasets/seeded_defects/`
 - `datasets/seeded_defects/labels.json`
 
 ## External baselines
 
 ### Radon
+
 - `external_baselines/run-radon-benchmark.ps1`
 - `docs/experiments/EXTERNAL_BASELINE.md`
 
 ### Semgrep
+
 - `external_baselines/run-semgrep-benchmark.ps1`
 - `docs/experiments/SEMGREP_BASELINE.md`
 
-Rust does **not** execute these external tools directly.
+Rust does **not** execute these external tools directly.  
 `consolidate` ingests their generated artifacts when present in `target/`.
 
 ## Key documentation
@@ -225,8 +288,7 @@ The most important current limitations are:
 
 ## Development validation
 
-~~~powershell
-Set-Location "C:\repos\quantum-flux-simulator"
+~~~bash
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
