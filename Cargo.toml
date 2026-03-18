@@ -3,9 +3,11 @@ name = "flux-sim"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Quantum Flux Simulator CLI in Rust"
-repository = "https://github.com/USER/quantum-flux-simulator"
+description = "Physics-inspired research tool for reproducible code analysis with an effective state model"
+repository = "https://github.com/crasofuentes-hub/quantum-flux-simulator"
 readme = "README.md"
+keywords = ["research", "code-analysis", "physics-inspired", "reproducible", "cli"]
+categories = ["command-line-utilities", "science"]
 
 [[bin]]
 name = "flux-sim"
